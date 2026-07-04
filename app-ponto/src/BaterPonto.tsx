@@ -128,9 +128,10 @@ export default function BaterPonto() {
           ...registro
         });
 
-        if (error) {
+       if (error) {
           console.error(error);
-          setStatus('Erro ao enviar ponto.');
+          // Meu visor de diagnóstico: jogo o erro real do banco de dados na tela do celular
+          setStatus(`Falha no Banco: ${error.message}`);
         } else {
           setStatus('Ponto Registrado com Sucesso!');
         }
