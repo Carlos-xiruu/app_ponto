@@ -1,94 +1,176 @@
 // @ts-nocheck
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
-import Cadastro from './Cadastro'; // Importo a tela de cadastro que acabei de criar
+import { Mail, Lock, LogIn, UserPlus, AlertCircle } from 'lucide-react';
 
-export default function Login({ onLoginSucesso }: { onLoginSucesso: () => void }) {
-  // Meus estados para gerenciar a tela de login
+export default function Login() {
+  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [nome, setNome] = useState(''); // Usado apenas no cadastro
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
-  
-  // Esse estado funciona como uma chave: se for true, mostro a tela de Cadastro. Se false, mostro o Login.
-  const [mostrarCadastro, setMostrarCadastro] = useState(false);
 
-  // Minha função para autenticar o usuário no banco
-  const handleLogin = async (e: React.FormEvent) => {
+  // Carrega as fontes Premium
+  useEffect(() => {
+    const link = document.createElement('link');
+    link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Montserrat:wght@600;700&display=swap';
+    link.rel = 'stylesheet';
+    document.head.appendChild(link);
+  }, []);
+
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setCarregando(true);
     setErro('');
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password: senha,
-    });
-
-    if (error) {
-      setErro('E-mail ou senha incorretos.');
+    if (isLogin) {
+      // Lógica de Login
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password: senha,
+      });
+      if (error) setErro('Credenciais inválidas. Tente novamente.');
     } else {
-      onLoginSucesso();
+      // Lógica de Criação de Conta
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: senha,
+      });
+      
+      if (error) {
+        setErro(error.message);
+      } else if (data.user) {
+        // Salva o nome do peão na tabela perfis logo após criar a conta
+        await supabase.from('perfis').insert([
+          { id: data.user.id, nome: nome || email.split('@')[0] }
+        ]);
+        // Volta para a tela de login após criar
+        setIsLogin(true);
+        setErro('Conta criada com sucesso! Faça o login.');
+      }
     }
     setCarregando(false);
   };
 
-  // Se a chave estiver ativada, eu renderizo a tela de Cadastro em vez do Login
-  if (mostrarCadastro) {
-    return <Cadastro onVoltar={() => setMostrarCadastro(false)} />;
-  }
-
-  // Caso contrário, renderizo a minha tela de Login padrão
   return (
-    <div style={{ padding: '20px', maxWidth: '400px', margin: '0 auto', fontFamily: 'sans-serif' }}>
-      <h2 style={{ textAlign: 'center', color: '#333' }}>Login do Funcionário</h2>
+    <div className="min-h-screen bg-[#020617] relative flex items-center justify-center p-6 font-['Inter'] overflow-hidden">
       
-      <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '20px' }}>
-        <input
-          type="email"
-          placeholder="E-mail"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          style={{ padding: '12px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '16px' }}
-        />
-        <input
-          type="password"
-          placeholder="Senha"
-          value={senha}
-          onChange={(e) => setSenha(e.target.value)}
-          required
-          style={{ padding: '12px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '16px' }}
-        />
+      {/* Efeitos Radiais de Fundo Corporativo */}
+      <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-blue-600/20 rounded-full blur-[120px] pointer-events-none"></div>
+      <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-emerald-600/10 rounded-full blur-[120px] pointer-events-none"></div>
+
+      <div className="w-full max-w-md relative z-10">
         
-        <button 
-          type="submit" 
-          disabled={carregando}
-          style={{ 
-            padding: '12px', 
-            backgroundColor: carregando ? '#ccc' : '#007bff', 
-            color: '#fff', 
-            border: 'none', 
-            borderRadius: '6px', 
-            fontSize: '16px', 
-            cursor: carregando ? 'not-allowed' : 'pointer',
-            fontWeight: 'bold'
-          }}
-        >
-          {carregando ? 'Entrando...' : 'Entrar no Sistema'}
-        </button>
-      </form>
+        {/* Cabeçalho do Login */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 shadow-xl mb-6">
+            <Lock className="text-emerald-500" size={32} />
+          </div>
+          <h1 className="font-['Montserrat'] text-3xl font-bold text-white tracking-tight mb-2">
+            {isLogin ? 'Acesso ao Sistema' : 'Nova Conta'}
+          </h1>
+          <p className="text-slate-400 text-sm">
+            {isLogin ? 'Insira suas credenciais para bater o ponto.' : 'Cadastre-se para habilitar seu acesso.'}
+          </p>
+        </div>
 
-      {erro && <p style={{ color: 'red', textAlign: 'center', marginTop: '15px' }}>{erro}</p>}
+        {/* Card Glassmorphism */}
+        <div className="bg-[#0f172a]/60 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 shadow-2xl">
+          
+          {erro && (
+            <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 text-sm font-medium border ${erro.includes('sucesso') ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+              <AlertCircle size={18} className="shrink-0" />
+              <p>{erro}</p>
+            </div>
+          )}
 
-      {/* Aqui fica o botão que altera meu estado e abre a tela de criar conta */}
-      <div style={{ marginTop: '20px', textAlign: 'center', borderTop: '1px solid #eee', paddingTop: '15px' }}>
-        <p style={{ color: '#666', fontSize: '14px', marginBottom: '10px' }}>Ainda não tem acesso?</p>
-        <button 
-          onClick={() => setMostrarCadastro(true)}
-          style={{ background: 'none', border: '1px solid #28a745', color: '#28a745', padding: '8px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-        >
-          Criar Nova Conta
-        </button>
+          <form onSubmit={handleAuth} className="flex flex-col gap-5">
+            
+            {!isLogin && (
+              <div>
+                <label className="block text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2 ml-1">Nome Completo</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500">
+                    <UserPlus size={18} />
+                  </div>
+                  <input 
+                    type="text" 
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                    required={!isLogin}
+                    className="w-full bg-slate-900/50 border border-slate-800 text-slate-100 text-sm rounded-xl py-3.5 pl-11 pr-4 focus:outline-none focus:border-slate-600 focus:ring-1 focus:ring-slate-600 transition-all placeholder-slate-600"
+                    placeholder="Ex: Carlos Silva"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2 ml-1">E-mail Corporativo</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500">
+                  <Mail size={18} />
+                </div>
+                <input 
+                  type="email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full bg-slate-900/50 border border-slate-800 text-slate-100 text-sm rounded-xl py-3.5 pl-11 pr-4 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all placeholder-slate-600"
+                  placeholder="seu.email@empresa.com"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2 ml-1">Senha de Acesso</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500">
+                  <Lock size={18} />
+                </div>
+                <input 
+                  type="password" 
+                  value={senha}
+                  onChange={(e) => setSenha(e.target.value)}
+                  required
+                  className="w-full bg-slate-900/50 border border-slate-800 text-slate-100 text-sm rounded-xl py-3.5 pl-11 pr-4 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all placeholder-slate-600"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+
+            <button 
+              type="submit"
+              disabled={carregando}
+              className="mt-2 w-full flex items-center justify-center gap-2 py-4 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-['Montserrat'] font-semibold rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(37,99,235,0.2)] hover:shadow-[0_0_30px_rgba(37,99,235,0.4)]"
+            >
+              {carregando ? (
+                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+              ) : isLogin ? (
+                <><LogIn size={20} /> Entrar no Sistema</>
+              ) : (
+                <><UserPlus size={20} /> Finalizar Cadastro</>
+              )}
+            </button>
+          </form>
+
+          {/* Divisor */}
+          <div className="mt-8 flex items-center justify-center gap-4">
+            <div className="h-px bg-slate-800 flex-1"></div>
+            <span className="text-slate-500 text-xs font-medium">{isLogin ? 'Ainda não tem acesso?' : 'Já possui uma conta?'}</span>
+            <div className="h-px bg-slate-800 flex-1"></div>
+          </div>
+
+          {/* Botão de Alternância */}
+          <button 
+            onClick={() => { setIsLogin(!isLogin); setErro(''); }}
+            className="mt-6 w-full py-3.5 bg-transparent border border-slate-700 hover:bg-slate-800 text-slate-300 font-['Montserrat'] font-semibold rounded-xl transition-all duration-200"
+          >
+            {isLogin ? 'Criar Nova Conta' : 'Voltar para o Login'}
+          </button>
+
+        </div>
       </div>
     </div>
   );

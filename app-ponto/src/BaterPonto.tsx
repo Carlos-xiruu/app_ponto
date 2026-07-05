@@ -2,198 +2,198 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import Webcam from 'react-webcam';
 import { supabase } from './supabaseClient';
+import { LogIn, LogOut, Camera, WifiOff, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function BaterPonto() {
-  // Minhas referências e estados da tela
   const webcamRef = useRef<Webcam>(null);
   const [status, setStatus] = useState('');
   const [carregando, setCarregando] = useState(false);
+  const [horaAtual, setHoraAtual] = useState(new Date());
 
-  // Regras da câmera (virada para o usuário)
-  const videoConstraints = {
-    width: 300,
-    height: 400,
-    facingMode: "user"
-  };
+  const videoConstraints = { width: 300, height: 400, facingMode: "user" };
 
-  // 1. O "Ouvido" da Rede: Fico escutando para ver se a internet do peão volta
+  // Motor do Relógio em Tempo Real e Fontes
+  useEffect(() => {
+    const link = document.createElement('link');
+    link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700&display=swap';
+    link.rel = 'stylesheet';
+    document.head.appendChild(link);
+
+    const timer = setInterval(() => setHoraAtual(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Listener de Conexão
   useEffect(() => {
     const escutarRede = () => {
       if (navigator.onLine) {
-        console.log('Detectei que a internet voltou! Iniciando sincronização...');
-        setStatus('Internet detectada. Sincronizando pontos pendentes...');
+        setStatus('Internet detectada. Sincronizando dados...');
         sincronizarPontosOffline();
       }
     };
-
-    // Ligo o sensor na rede do navegador
     window.addEventListener('online', escutarRede);
-    
-    // Rodo a verificação logo que a tela abre, caso tenha ficado ponto preso de ontem
-    if (navigator.onLine) {
-      sincronizarPontosOffline();
-    }
-
-    // Quando o componente for fechado, eu desligo o sensor para não pesar a memória
+    if (navigator.onLine) sincronizarPontosOffline();
     return () => window.removeEventListener('online', escutarRede);
   }, []);
 
-  // 2. Função de Descarregar: Pega do celular e manda pra nuvem
   const sincronizarPontosOffline = async () => {
-    // Busco no armazenamento do celular (localStorage) se tem pontos acumulados
     const pontosLocais = localStorage.getItem('pontos_offline');
-    if (!pontosLocais) return; // Se não tem, encerro o circuito aqui
-
+    if (!pontosLocais) return;
     const listaDePontos = JSON.parse(pontosLocais);
     if (listaDePontos.length === 0) return;
 
-    // Pego o ID do usuário que está logado para garantir de quem é o ponto
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    setStatus(`Sincronizando ${listaDePontos.length} ponto(s)...`);
-
-    // Preparo o pacote de dados montando as peças que o banco de dados exige
     const pontosParaEnviar = listaDePontos.map((ponto: any) => ({
       funcionario_id: user.id,
       tipo_registro: ponto.tipo_registro,
       data_hora: ponto.data_hora,
-      foto_url: ponto.foto_url, // A imagem já vai em formato texto
+      foto_url: ponto.foto_url,
       localizacao_gps: ponto.localizacao_gps
     }));
 
-    // Despacho o lote inteiro pro Supabase em uma pancada só
     const { error } = await supabase.from('registros_ponto').insert(pontosParaEnviar);
-
     if (!error) {
-      // Deu certo? Limpo o histórico do celular
       localStorage.removeItem('pontos_offline');
-      setStatus('Sincronização concluída com sucesso!');
-      setTimeout(() => setStatus(''), 3000); // Limpo o aviso depois de 3 segundos
-    } else {
-      console.error('Erro ao sincronizar:', error);
-      setStatus('Erro ao sincronizar pontos com o servidor.');
+      setStatus('Sincronização concluída!');
+      setTimeout(() => setStatus(''), 3000);
     }
   };
 
-  // 3. A Mágica de Bater o Ponto (Câmera + GPS)
-  const registrar = useCallback(async () => {
+  const registrar = useCallback(async (tipoRegistro: 'entrada' | 'saida') => {
     setCarregando(true);
-    setStatus('Capturando localização...');
+    setStatus('Capturando dados...');
 
-    // 3.1 Capturo a foto no formato JPEG comprimido
     const imageSrc = webcamRef.current?.getScreenshot();
     if (!imageSrc) {
-      setStatus('Erro ao acessar a câmera. Verifique as permissões.');
+      setStatus('Erro de câmera. Verifique permissões.');
       setCarregando(false);
       return;
     }
 
-    // 3.2 Busco o GPS do aparelho
     navigator.geolocation.getCurrentPosition(
       async (posicao) => {
         const gps = `${posicao.coords.latitude},${posicao.coords.longitude}`;
-        await salvarPonto(imageSrc, gps); // Se pegou o GPS, mando pra função de salvar
+        await salvarPonto(imageSrc, gps, tipoRegistro);
       },
-      async (erro) => {
-        console.warn('GPS falhou ou foi negado pelo celular. Salvando sem localização.');
-        await salvarPonto(imageSrc, null); // Se negou o GPS, salvo a foto mesmo assim
+      async () => {
+        await salvarPonto(imageSrc, null, tipoRegistro);
       },
-      { enableHighAccuracy: true, timeout: 5000 } // Exijo alta precisão, mas com limite de 5s
+      { enableHighAccuracy: true, timeout: 5000 }
     );
   }, [webcamRef]);
 
-  // 4. O Comutador: Decide se despacha direto pra nuvem ou guarda no bolso
-  const salvarPonto = async (fotoLeve: string, localizacao: string | null) => {
-    const agora = new Date().toISOString();
-    
-    // Monto o pacote do ponto
+  const salvarPonto = async (fotoLeve: string, localizacao: string | null, tipoRegistro: string) => {
     const registro = {
-      tipo_registro: 'entrada',
-      data_hora: agora,
+      tipo_registro: tipoRegistro,
+      data_hora: new Date().toISOString(),
       foto_url: fotoLeve,
       localizacao_gps: localizacao
     };
 
-    const isOnline = navigator.onLine;
-
-    // Se tem internet, mando direto pro Supabase
-    if (isOnline) {
-      setStatus('Enviando para o servidor...');
+    if (navigator.onLine) {
+      setStatus('Processando...');
       const { data: { user } } = await supabase.auth.getUser();
-      
       if (user) {
         const { error } = await supabase.from('registros_ponto').insert({
           funcionario_id: user.id,
           ...registro
         });
-
-       if (error) {
-          console.error(error);
-          // Meu visor de diagnóstico: jogo o erro real do banco de dados na tela do celular
-          setStatus(`Falha no Banco: ${error.message}`);
-        } else {
-          setStatus('Ponto Registrado com Sucesso!');
-        }
+        if (error) setStatus(`Falha: ${error.message}`);
+        else setStatus('Sucesso!');
       }
     } else {
-      // Sem internet? Abro a gaveta do celular e guardo lá
-      setStatus('Sem internet! Salvando ponto no aparelho...');
       const pontosSalvos = JSON.parse(localStorage.getItem('pontos_offline') || '[]');
       pontosSalvos.push(registro);
       localStorage.setItem('pontos_offline', JSON.stringify(pontosSalvos));
-      setStatus('Ponto guardado. O sistema enviará sozinho quando a rede voltar!');
+      setStatus('Salvo no aparelho (Offline).');
     }
 
     setCarregando(false);
-    setTimeout(() => setStatus(''), 4000); // Limpo a tela
+    setTimeout(() => setStatus(''), 4000);
   };
 
-  // 5. Minha Interface (Front-end)
   return (
-    <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '400px', margin: '0 auto', textAlign: 'center' }}>
-      <h2 style={{ color: '#333' }}>Relógio de Ponto</h2>
-      <p style={{ color: '#666', fontSize: '14px', marginBottom: '20px' }}>
-        Posicione seu rosto e clique no botão para registrar.
-      </p>
+    <div className="min-h-screen bg-[#020617] relative overflow-hidden font-['Inter'] text-slate-100 flex flex-col items-center py-10 px-6">
+      
+      {/* Efeitos de Fundo Corporativo */}
+      <div className="absolute top-[-10%] left-[-20%] w-96 h-96 bg-blue-600/20 rounded-full blur-[128px] pointer-events-none"></div>
+      <div className="absolute bottom-[-10%] right-[-20%] w-96 h-96 bg-emerald-600/10 rounded-full blur-[128px] pointer-events-none"></div>
 
-      {/* Caixote da Câmera */}
-      <div style={{ border: '3px solid #ccc', borderRadius: '8px', overflow: 'hidden', marginBottom: '15px', backgroundColor: '#000' }}>
-        <Webcam 
-          audio={false} 
-          ref={webcamRef} 
-          screenshotFormat="image/jpeg" 
-          videoConstraints={videoConstraints} 
-          style={{ width: '100%', maxWidth: '300px', display: 'block', margin: '0 auto' }} 
-        />
-      </div>
-
-      {/* Botão de Ação */}
-      <button 
-        onClick={registrar}
-        disabled={carregando}
-        style={{ 
-          padding: '15px', 
-          fontSize: '18px', 
-          backgroundColor: carregando ? '#ccc' : '#007bff', 
-          color: 'white', 
-          border: 'none', 
-          borderRadius: '8px', 
-          cursor: carregando ? 'not-allowed' : 'pointer',
-          width: '100%',
-          fontWeight: 'bold',
-          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-        }}
-      >
-        {carregando ? 'Processando...' : 'Bater Ponto'}
-      </button>
-
-      {/* Painel de Mensagens */}
-      {status && (
-        <div style={{ marginTop: '20px', padding: '12px', backgroundColor: '#e9ecef', borderRadius: '6px', fontWeight: 'bold', color: '#333' }}>
-          {status}
+      <div className="w-full max-w-sm relative z-10 flex flex-col items-center">
+        
+        {/* O Relógio de Ponto (Destaque Minimalista) */}
+        <div className="mb-10 text-center">
+          <h2 className="font-['Montserrat'] text-slate-400 text-sm font-semibold tracking-widest uppercase mb-2">
+            Relógio de Ponto
+          </h2>
+          <div className="font-['Montserrat'] text-5xl font-bold tracking-tight text-white drop-shadow-lg">
+            {horaAtual.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            <span className="text-2xl text-slate-500 ml-1">
+              {horaAtual.toLocaleTimeString('pt-BR', { second: '2-digit' })}
+            </span>
+          </div>
+          <div className="text-slate-400 mt-1 text-sm">
+            {horaAtual.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </div>
         </div>
-      )}
+
+        {/* Câmera - Bloco Flutuante Glassmorphism */}
+        <div className="w-full bg-[#0f172a]/60 backdrop-blur-xl border border-slate-800 rounded-3xl p-3 shadow-2xl mb-8 ring-1 ring-emerald-500/50">
+          <div className="relative rounded-2xl overflow-hidden bg-black aspect-[3/4]">
+            <Webcam 
+              audio={false} 
+              ref={webcamRef} 
+              screenshotFormat="image/jpeg" 
+              videoConstraints={videoConstraints} 
+              className="w-full h-full object-cover"
+            />
+            {/* Status da Câmera */}
+            <div className="absolute bottom-4 left-0 right-0 flex justify-center">
+              <div className="flex items-center gap-2 bg-black/50 backdrop-blur-md text-slate-200 px-3 py-1.5 rounded-full text-xs font-medium border border-white/10">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Sensor Ativo
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Botões Largos e Premium */}
+        <div className="w-full flex flex-col gap-4">
+          <button 
+            onClick={() => registrar('entrada')}
+            disabled={carregando}
+            className="w-full flex items-center justify-center gap-3 py-4 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-['Montserrat'] font-semibold rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)]"
+          >
+            <LogIn size={22} /> 
+            <span className="tracking-wide">Registrar Entrada</span>
+          </button>
+
+          <button 
+            onClick={() => registrar('saida')}
+            disabled={carregando}
+            className="w-full flex items-center justify-center gap-3 py-4 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-['Montserrat'] font-semibold rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <LogOut size={22} /> 
+            <span className="tracking-wide">Registrar Saída</span>
+          </button>
+        </div>
+
+        {/* Painel de Status Elegante */}
+        {status && (
+          <div className={`mt-6 w-full flex items-center gap-3 p-4 rounded-xl text-sm font-medium border backdrop-blur-md ${
+            status === 'Sucesso!' 
+              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+              : status.includes('Offline') || status.includes('Internet')
+              ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+              : 'bg-slate-800/50 border-slate-700 text-slate-300'
+          }`}>
+            {status === 'Sucesso!' ? <CheckCircle2 size={18} /> : status.includes('Offline') ? <WifiOff size={18} /> : <AlertCircle size={18} />}
+            {status}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

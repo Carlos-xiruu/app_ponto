@@ -2,77 +2,94 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import Login from './Login';
+import Dashboard from './Dashboard';
 import BaterPonto from './BaterPonto';
-import Dashboard from './Dashboard'; // A tela de gestor que criei para gerenciar as horas
+import { LogOut, Hexagon, Loader2 } from 'lucide-react';
 
 export default function App() {
-  const [sessao, setSessao] = useState<any>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [sessao, setSessao] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
-    // 1. Assim que o app carrega, eu verifico se já tem alguém com login salvo no navegador
+    // 1. Verifica a sessão atual ao abrir o app
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSessao(session);
-      if (session) {
-        verificarNivelDeAcesso(session.user.id);
-      } else {
-        setCarregando(false);
-      }
+      if (session) checkRole(session.user.id);
+      else setCarregando(false);
     });
 
-    // 2. Aqui eu deixo um observador rodando em segundo plano para detectar se o usuário logou ou deslogou
-    supabase.auth.onAuthStateChange((_event, session) => {
+    // 2. Fica escutando mudanças na rede (Login, Logout, Expiração de token)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSessao(session);
       if (session) {
-        verificarNivelDeAcesso(session.user.id);
+        checkRole(session.user.id);
       } else {
-        setIsAdmin(false); // Zero o acesso de gestor se a pessoa sair da conta
+        setIsAdmin(false);
         setCarregando(false);
       }
     });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  // 3. Minha lógica de "Crachá": Faço uma consulta rápida no banco para confirmar o nível de acesso do usuário
-  const verificarNivelDeAcesso = async (userId: string) => {
+  // 3. Consulta a tabela de perfis para descobrir se é Gestor ou Peão
+  const checkRole = async (userId: string) => {
+    setCarregando(true);
     const { data, error } = await supabase
       .from('perfis')
       .select('is_admin')
       .eq('id', userId)
       .single();
 
-    if (data && data.is_admin === true) {
-      setIsAdmin(true); // Confirmo que é o administrador acessando
-    } else {
-      setIsAdmin(false); // É um funcionário padrão na obra
+    if (!error && data) {
+      setIsAdmin(data.is_admin);
     }
     setCarregando(false);
   };
 
+  // TELA DE CARREGAMENTO (Protege o sistema enquanto verifica o banco)
   if (carregando) {
-    return <div style={{ padding: '50px', textAlign: 'center', fontFamily: 'sans-serif' }}>Carregando sistema...</div>;
+    return (
+      <div className="min-h-screen bg-[#020617] flex flex-col font-sans">
+        <Loader2 size={48} className="animate-spin mb-4" />
+        <div className="flex items-center gap-2 text-emerald-500 font-montserrat font-bold tracking-wider text-lg">
+          Sincronizando Sistema...
+        </div>
+      </div>
+    );
   }
 
-  // Se não encontrei nenhuma sessão ativa, eu travo o acesso e redireciono para a tela de Login
+  // SE NÃO TEM SESSÃO: Mostra a porta de entrada (Login)
   if (!sessao) {
-    return <Login onLoginSucesso={() => console.log('Login feito com sucesso!')} />;
+    return <Login />;
   }
 
-  // Passou pela barreira do Login? Então eu renderizo a interface de acordo com a permissão
+  // SE ESTÁ LOGADO: Mostra a Navbar Premium + A tela correta
   return (
-    <div>
-      {/* Minha barra superior de navegação */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 20px', backgroundColor: '#e9ecef', borderBottom: '1px solid #ccc' }}>
+    <div className="min-h-screen bg-[#020617] flex flex-col font-['Inter']">
+      
+      {/* NAVBAR PREMIUM ENTERPRISE */}
+      <header className="bg-[#0f172a]/80 backdrop-blur-md border-b border-slate-800 px-6 py-4 flex justify-between items-center print:hidden sticky top-0 z-40 shadow-lg">
+        <div className="flex items-center gap-2 text-emerald-500 font-['Montserrat'] font-bold tracking-wider text-lg">
+          <Hexagon size={24} className="fill-emerald-500/20" />
+          PONTO<span className="text-white">SEGURO</span>
+        </div>
+        
         <button 
           onClick={() => supabase.auth.signOut()} 
-          style={{ background: 'transparent', border: 'none', color: '#dc3545', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}
+          className="flex items-center gap-2 text-slate-400 hover:text-red-400 transition-colors text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-red-500/10"
         >
-          Sair da conta
+          <LogOut size={18} />
+          <span className="hidden sm:inline">Encerrar Sessão</span>
         </button>
-      </div>
+      </header>
 
-      {/* Meu comutador de telas: Admin vê o painel de horas, funcionário é direcionado pra câmera */}
-      {isAdmin ? <Dashboard /> : <BaterPonto />}
+      {/* ÁREA DE CONTEÚDO (O Comutador Inteligente) */}
+      <main className="flex-1 overflow-y-auto">
+        {isAdmin ? <Dashboard /> : <BaterPonto />}
+      </main>
+      
     </div>
   );
 }
