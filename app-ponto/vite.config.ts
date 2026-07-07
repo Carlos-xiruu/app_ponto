@@ -1,22 +1,20 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import { VitePWA } from 'vite-plugin-pwa';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icons.svg'],
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
-        name: 'Enterprise Ponto Seguro',
+        name: 'Ponto Seguro',
         short_name: 'PontoSeguro',
-        description: 'Sistema Avançado de Registro de Ponto com Geolocalização',
-        theme_color: '#020617',
+        description: 'Sistema de Gestão e Auditoria de Ponto',
+        theme_color: '#0f172a', /* A cor da barra de status do celular */
         background_color: '#020617',
-        display: 'standalone',
-        orientation: 'portrait',
-        start_url: '/',
+        display: 'standalone', /* Isso arranca a barra de navegação e deixa em tela cheia */
         icons: [
           {
             src: 'pwa-192x192.png',
@@ -26,10 +24,11 @@ export default defineConfig({
           {
             src: 'pwa-512x512.png',
             sizes: '512x512',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'any maskable'
           }
         ]
       }
     })
   ]
-});
+})
