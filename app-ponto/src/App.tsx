@@ -48,12 +48,25 @@ export default function App() {
     setCarregando(false);
   };
 
+  // Minha função de Força Bruta para Logout Instantâneo
+  const fazerLogout = () => {
+    // 1. Limpa todo o cache e o histórico de sessão instantaneamente
+    localStorage.clear();
+    sessionStorage.clear();
+    
+    // 2. Avisa o Supabase que a conta saiu (mas sem o "await", para não travar a tela esperando resposta)
+    supabase.auth.signOut();
+    
+    // 3. Força o redirecionamento imediato do navegador para a tela principal (Login)
+    window.location.replace('/');
+  };
+
   // TELA DE CARREGAMENTO (Protege o sistema enquanto verifica o banco)
   if (carregando) {
     return (
-      <div className="min-h-screen bg-[#020617] flex flex-col font-sans">
-        <Loader2 size={48} className="animate-spin mb-4" />
-        <div className="flex items-center gap-2 text-emerald-500 font-montserrat font-bold tracking-wider text-lg">
+      <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center font-sans">
+        <Loader2 size={48} className="text-emerald-500 animate-spin mb-4" />
+        <div className="flex items-center gap-2 text-emerald-500 font-['Montserrat'] font-bold tracking-wider text-lg">
           Sincronizando Sistema...
         </div>
       </div>
@@ -76,8 +89,9 @@ export default function App() {
           PONTO<span className="text-white">SEGURO</span>
         </div>
         
+        {/* Meu botão com a injeção do logout  */}
         <button 
-          onClick={() => supabase.auth.signOut()} 
+          onClick={fazerLogout} 
           className="flex items-center gap-2 text-slate-400 hover:text-red-400 transition-colors text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-red-500/10"
         >
           <LogOut size={18} />

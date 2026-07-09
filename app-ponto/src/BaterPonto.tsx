@@ -22,6 +22,14 @@ export default function BaterPonto() {
 
   const videoConstraints = { width: 300, height: 400, facingMode: "user" };
 
+  // Meu motor inteligente para fazer as mensagens sumirem sozinhas
+  const mostrarAviso = (mensagem) => {
+    setStatus(mensagem);
+    setTimeout(() => {
+      setStatus('');
+    }, 6000); // Some após 6 segundos
+  };
+
   useEffect(() => {
     const timer = setInterval(() => setHoraAtual(new Date()), 1000);
     carregarDadosDoFuncionario();
@@ -85,21 +93,21 @@ export default function BaterPonto() {
 
   const registrar = useCallback(async (tipoRegistro: 'entrada' | 'saida') => {
     if (jornadaAtual.bloqueadoPorHoje) {
-      setStatus('Jornada concluída! Novo registro liberado apenas amanhã.');
+      mostrarAviso('Jornada concluída! Novo registro liberado apenas amanhã.');
       return;
     }
 
     if (!obraSelecionadaId) {
-      setStatus('Erro: Selecione a Obra onde você está agora.');
+      mostrarAviso('Erro: Selecione a Obra onde você está agora.');
       return;
     }
 
     setCarregando(true);
-    setStatus('Autenticando GPS com a base da Obra...');
+    setStatus('Autenticando GPS com a base da Obra...'); // Esse não usa timeout pois será sobrescrito
 
     const imageSrc = webcamRef.current?.getScreenshot();
     if (!imageSrc) {
-      setStatus('Erro: Câmera não detectada.');
+      mostrarAviso('Erro: Câmera não detectada.');
       setCarregando(false);
       return;
     }
@@ -114,7 +122,7 @@ export default function BaterPonto() {
           const distanciaDaObra = calcularDistanciaEmMetros(posicao.coords.latitude, posicao.coords.longitude, obraLat, obraLon);
           
           if (distanciaDaObra > 50) {
-            setStatus(`Acesso Negado: Você está a ${Math.floor(distanciaDaObra)}m de distância da obra. Aproxime-se do local.`);
+            mostrarAviso(`Acesso Negado: Você está a ${Math.floor(distanciaDaObra)}m de distância da obra. Aproxime-se do local.`);
             setCarregando(false);
             return;
           }
@@ -124,7 +132,7 @@ export default function BaterPonto() {
           const [entLat, entLon] = jornadaAtual.pontoEntradaGps.split(',').map(Number);
           const distanciaDaEntrada = calcularDistanciaEmMetros(posicao.coords.latitude, posicao.coords.longitude, entLat, entLon);
           if (distanciaDaEntrada > 50) {
-            setStatus(`Fraude Detectada: Sua saída está a ${Math.floor(distanciaDaEntrada)}m do local de entrada.`);
+            mostrarAviso(`Fraude Detectada: Sua saída está a ${Math.floor(distanciaDaEntrada)}m do local de entrada.`);
             setCarregando(false);
             return;
           }
@@ -133,7 +141,7 @@ export default function BaterPonto() {
         await salvarPonto(imageSrc, gpsAtual, tipoRegistro, obraSelecionada?.nome || 'Base / Não Identificada'); 
       },
       (error) => {
-        setStatus('Você precisa permitir o uso do GPS do celular para bater ponto.');
+        mostrarAviso('Você precisa permitir o uso do GPS do celular para bater ponto.');
         setCarregando(false);
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -146,14 +154,14 @@ export default function BaterPonto() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       const { error } = await supabase.from('registros_ponto').insert({ funcionario_id: user.id, ...registro });
-      if (error) setStatus(`Falha de Rede: Tente de novo.`);
-      else {
-        setStatus('Ponto Salvo com Sucesso!');
+      if (error) {
+        mostrarAviso('Falha de Rede: Tente de novo.');
+      } else {
+        mostrarAviso('Ponto Salvo com Sucesso!');
         carregarDadosDoFuncionario(); 
       }
     }
     setCarregando(false);
-    setTimeout(() => setStatus(''), 5000);
   };
 
   const handleUploadFoto = async (event) => {
@@ -337,7 +345,7 @@ export default function BaterPonto() {
           )}
         </div>
 
-        {/* ALERTA FLUTUANDO NA BASE DA TELA */}
+        {/* ALERTA CORRIGIDO: Agora as mensagens somem sozinhas após 6 segundos */}
         {status && (
           <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-sm flex items-start text-left gap-3 p-4 rounded-2xl text-sm font-medium border backdrop-blur-xl z-50 shadow-2xl animate-in slide-in-from-bottom-6 ${status.includes('Sucesso') ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-100' : 'bg-red-950/90 border-red-500/50 text-red-100'}`}>
             <div className="mt-0.5 shrink-0">
