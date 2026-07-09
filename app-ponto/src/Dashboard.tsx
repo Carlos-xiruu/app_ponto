@@ -494,7 +494,7 @@ export default function Dashboard() {
                       <div key={obra.id} className="bg-slate-900/80 hover:bg-slate-800/80 border border-slate-700/60 rounded-xl p-4 flex justify-between items-center transition-colors group">
                         <div className="overflow-hidden">
                           <span className="block text-sm font-bold text-slate-100 truncate">{obra.nome}</span>
-                          <span className="block text-[11px] text-slate-400 font-mono mt-1 flex items-center gap-1">
+                          <span className="inline-flex text-[11px] text-slate-400 font-mono mt-1 items-center gap-1">
                             <MapPin size={10} className="text-blue-500" /> {obra.localizacao_gps}
                           </span>
                         </div>
@@ -512,7 +512,7 @@ export default function Dashboard() {
         )}
 
         {/* Dashboard Base */}
-        <div className="block">
+        <div>
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-5">
             <div>
               <h1 className="font-['Montserrat'] text-2xl md:text-3xl font-bold text-white mb-1">Painel de Fechamento</h1>

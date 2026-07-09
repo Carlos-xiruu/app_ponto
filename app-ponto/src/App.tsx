@@ -80,7 +80,8 @@ export default function App() {
 
   // SE ESTÁ LOGADO: Mostra a Navbar Premium + A tela correta
   return (
-    <div className="min-h-screen bg-[#020617] flex flex-col font-['Inter']">
+    // O pulo do gato: Removi o flex-col que engessava a tela
+    <div className="min-h-screen bg-[#020617] font-['Inter']">
       
       {/* NAVBAR PREMIUM ENTERPRISE */}
       <header className="bg-[#0f172a]/80 backdrop-blur-md border-b border-slate-800 px-6 py-4 flex justify-between items-center print:hidden sticky top-0 z-40 shadow-lg">
@@ -89,7 +90,7 @@ export default function App() {
           PONTO<span className="text-white">SEGURO</span>
         </div>
         
-        {/* Meu botão com a injeção do logout  */}
+        {/* Meu botão com a injeção do logout turbo */}
         <button 
           onClick={fazerLogout} 
           className="flex items-center gap-2 text-slate-400 hover:text-red-400 transition-colors text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-red-500/10"
@@ -100,7 +101,8 @@ export default function App() {
       </header>
 
       {/* ÁREA DE CONTEÚDO (O Comutador Inteligente) */}
-      <main className="flex-1 overflow-y-auto">
+      {/* Removi o flex-1 e o overflow-y-auto. Agora o Safari gerencia o scroll com aceleração de hardware nativa! */}
+      <main>
         {isAdmin ? <Dashboard /> : <BaterPonto />}
       </main>
       

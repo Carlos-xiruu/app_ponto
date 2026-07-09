@@ -21,8 +21,17 @@ export default function Login() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    setCarregando(true);
     setMensagem({ texto: '', tipo: '' });
+
+    // --- A BLINDAGEM DO E-MAIL (REGEX) ---
+    // Faz a checagem rigorosa do formato antes de acionar o servidor
+    const regexEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!regexEmail.test(email)) {
+      setMensagem({ texto: 'Por favor, digite um formato de e-mail válido (ex: seu.nome@gmail.com).', tipo: 'erro' });
+      return; // O "return" mata a função aqui, economizando requisições ao Supabase
+    }
+
+    setCarregando(true);
 
     try {
       if (modo === 'recuperacao') {
@@ -37,10 +46,10 @@ export default function Login() {
       } else if (modo === 'login') {
         // --- FLUXO DE LOGIN ---
         const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
-        if (error) throw new Error('Credenciais inválidas. Tente novamente.');
+        if (error) throw new Error('Credenciais inválidas. Verifique seu e-mail e senha.');
 
       } else {
-        // --- FLUXO DE CADASTRO COM DATA DE NASCIMENTO ---
+        // --- FLUXO DE CADASTRO ---
         const { data, error } = await supabase.auth.signUp({ email, password: senha });
         if (error) throw error;
         
@@ -51,7 +60,9 @@ export default function Login() {
             nome: nome || email.split('@')[0],
             data_nascimento: dataNascimento || null
           }]);
-          setMensagem({ texto: 'Conta criada com sucesso! Faça o login.', tipo: 'sucesso' });
+          
+          // Mensagem adaptada para orientar sobre a confirmação de e-mail no Supabase
+          setMensagem({ texto: 'Conta criada! Verifique sua caixa de entrada para confirmar o e-mail antes de logar.', tipo: 'sucesso' });
           setModo('login');
         }
       }
@@ -85,7 +96,7 @@ export default function Login() {
           {mensagem.texto && (
             <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 text-sm font-medium border ${mensagem.tipo === 'sucesso' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
               <AlertCircle size={18} className="shrink-0" />
-              <p>{mensagem.texto}</p>
+              <p className="leading-snug">{mensagem.texto}</p>
             </div>
           )}
 
