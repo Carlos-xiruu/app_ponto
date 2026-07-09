@@ -14,8 +14,6 @@ export default function BaterPonto() {
   
   const [obrasList, setObrasList] = useState([]);
   const [obraSelecionadaId, setObraSelecionadaId] = useState('');
-  
-  // Meu estado para controlar a abertura do nosso novo Menu Dropdown Customizado
   const [dropdownAberto, setDropdownAberto] = useState(false);
   
   const [jornadaAtual, setJornadaAtual] = useState({ status: 'livre', pontoEntradaGps: null, bloqueadoPorHoje: false, obraNomeAtual: '' });
@@ -87,21 +85,21 @@ export default function BaterPonto() {
 
   const registrar = useCallback(async (tipoRegistro: 'entrada' | 'saida') => {
     if (jornadaAtual.bloqueadoPorHoje) {
-      setStatus('Jornada concluída! O sistema só liberará um novo registro amanhã.');
+      setStatus('Jornada concluída! Novo registro liberado apenas amanhã.');
       return;
     }
 
     if (!obraSelecionadaId) {
-      setStatus('Erro: Você precisa selecionar a Obra onde está trabalhando antes de bater o ponto.');
+      setStatus('Erro: Selecione a Obra onde você está agora.');
       return;
     }
 
     setCarregando(true);
-    setStatus('Autenticando GPS com os satélites da Obra...');
+    setStatus('Autenticando GPS com a base da Obra...');
 
     const imageSrc = webcamRef.current?.getScreenshot();
     if (!imageSrc) {
-      setStatus('Erro: Câmera não detectada ou permissão negada.');
+      setStatus('Erro: Câmera não detectada.');
       setCarregando(false);
       return;
     }
@@ -116,7 +114,7 @@ export default function BaterPonto() {
           const distanciaDaObra = calcularDistanciaEmMetros(posicao.coords.latitude, posicao.coords.longitude, obraLat, obraLon);
           
           if (distanciaDaObra > 50) {
-            setStatus(`Acesso Negado: Você está a ${Math.floor(distanciaDaObra)}m de distância da Obra ${obraSelecionada.nome}. Aproxime-se do local.`);
+            setStatus(`Acesso Negado: Você está a ${Math.floor(distanciaDaObra)}m de distância da obra. Aproxime-se do local.`);
             setCarregando(false);
             return;
           }
@@ -126,7 +124,7 @@ export default function BaterPonto() {
           const [entLat, entLon] = jornadaAtual.pontoEntradaGps.split(',').map(Number);
           const distanciaDaEntrada = calcularDistanciaEmMetros(posicao.coords.latitude, posicao.coords.longitude, entLat, entLon);
           if (distanciaDaEntrada > 50) {
-            setStatus(`Fraude Detectada: Sua saída está a ${Math.floor(distanciaDaEntrada)}m do local de onde você bateu a entrada.`);
+            setStatus(`Fraude Detectada: Sua saída está a ${Math.floor(distanciaDaEntrada)}m do local de entrada.`);
             setCarregando(false);
             return;
           }
@@ -135,7 +133,7 @@ export default function BaterPonto() {
         await salvarPonto(imageSrc, gpsAtual, tipoRegistro, obraSelecionada?.nome || 'Base / Não Identificada'); 
       },
       (error) => {
-        setStatus('Para bater ponto, você OBRIGATORIAMENTE precisa ligar a localização no celular.');
+        setStatus('Você precisa permitir o uso do GPS do celular para bater ponto.');
         setCarregando(false);
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -182,7 +180,6 @@ export default function BaterPonto() {
     setCarregando(false);
   };
 
-  // Função auxiliar para achar o nome da obra selecionada
   const getNomeObraSelecionada = () => {
     if (!obraSelecionadaId) return 'Onde você está trabalhando hoje?';
     return obrasList.find(o => o.id === obraSelecionadaId)?.nome || 'Obra Desconhecida';
@@ -233,11 +230,10 @@ export default function BaterPonto() {
                     <input type="file" accept="image/*" onChange={handleUploadFoto} disabled={fazendoUpload} className="hidden" />
                   </label>
                 </div>
-                <span className="text-[11px] text-slate-500 text-center">Toque na imagem para escolher uma foto da galeria.</span>
               </div>
               <div>
                 <label className="text-xs text-slate-400 mb-1 block font-semibold uppercase tracking-wider">Sua Função / Cargo</label>
-                <input type="text" value={perfil.funcao || ''} onChange={e => setPerfil({...perfil, funcao: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:border-emerald-500 outline-none transition-all" placeholder="Ex: Montador" />
+                <input type="text" value={perfil.funcao || ''} onChange={e => setPerfil({...perfil, funcao: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:border-emerald-500 outline-none transition-all" />
               </div>
               <button type="submit" disabled={carregando || fazendoUpload} className="mt-2 w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition-colors disabled:opacity-50">
                 <Save size={18} /> Salvar Alterações
@@ -247,8 +243,6 @@ export default function BaterPonto() {
         </div>
       )}
 
-      <div className="absolute top-[10%] left-[-20%] w-96 h-96 bg-blue-600/10 rounded-full blur-[128px] pointer-events-none"></div>
-      
       <div className="w-full max-w-sm relative z-10 flex flex-col items-center pt-6 px-6">
         
         <div className="mb-6 text-center">
@@ -264,7 +258,7 @@ export default function BaterPonto() {
           'bg-slate-800/50 border-slate-700 text-slate-400'
         }`}>
           {jornadaAtual.bloqueadoPorHoje ? (
-            <><Ban size={18} /><span className="text-sm font-semibold">Jornada de Hoje Concluída.</span></>
+            <><Ban size={18} /><span className="text-sm font-semibold">Jornada Concluída.</span></>
           ) : jornadaAtual.status === 'trabalhando' ? (
             <><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span><span className="text-sm font-semibold">Trabalhando na {jornadaAtual.obraNomeAtual || 'Base'}</span></>
           ) : (
@@ -272,10 +266,8 @@ export default function BaterPonto() {
           )}
         </div>
 
-        {/* --- A MÁGICA: MEU DROPDOWN CUSTOMIZADO DE ALTO NÍVEL --- */}
         {!jornadaAtual.bloqueadoPorHoje && (
           <div className="w-full mb-6 relative">
-            
             <button 
               type="button"
               onClick={() => { if (jornadaAtual.status !== 'trabalhando') setDropdownAberto(!dropdownAberto); }}
@@ -289,12 +281,10 @@ export default function BaterPonto() {
               <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${dropdownAberto ? 'rotate-180' : ''}`} />
             </button>
 
-            {/* O "Catcher" invisível que fecha o menu se o cara clicar fora */}
             {dropdownAberto && (
               <div className="fixed inset-0 z-30" onClick={() => setDropdownAberto(false)}></div>
             )}
 
-            {/* A lista suspensa flutuante e estilizada */}
             {dropdownAberto && (
               <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-[#0f172a] border border-slate-700 rounded-2xl shadow-2xl overflow-hidden z-40 animate-in fade-in slide-in-from-top-2">
                 <ul className="max-h-60 overflow-y-auto py-2 divide-y divide-slate-800/50 custom-scrollbar">
@@ -309,9 +299,7 @@ export default function BaterPonto() {
                       key={obra.id}
                       onClick={() => { setObraSelecionadaId(obra.id); setDropdownAberto(false); }}
                       className={`px-4 py-3 text-sm cursor-pointer transition-colors flex items-center justify-between ${
-                        obraSelecionadaId === obra.id 
-                          ? 'bg-blue-600/10 text-blue-400 font-bold' 
-                          : 'text-slate-200 hover:bg-slate-800'
+                        obraSelecionadaId === obra.id ? 'bg-blue-600/10 text-blue-400 font-bold' : 'text-slate-200 hover:bg-slate-800'
                       }`}
                     >
                       <span className="truncate">{obra.nome}</span>
@@ -324,7 +312,6 @@ export default function BaterPonto() {
           </div>
         )}
 
-        {/* Câmera */}
         <div className="w-full bg-[#0f172a]/60 backdrop-blur-xl border border-slate-800 rounded-3xl p-3 shadow-2xl mb-6 ring-1 ring-emerald-500/30">
           <div className="relative rounded-2xl overflow-hidden bg-black aspect-[3/4]">
             <Webcam audio={false} ref={webcamRef} screenshotFormat="image/jpeg" videoConstraints={videoConstraints} className="w-full h-full object-cover" />
@@ -336,7 +323,6 @@ export default function BaterPonto() {
           </div>
         </div>
 
-        {/* Botoeira Condicional de Interface */}
         <div className="w-full flex flex-col gap-3 pb-8">
           {jornadaAtual.status === 'livre' && !jornadaAtual.bloqueadoPorHoje && (
             <button onClick={() => registrar('entrada')} disabled={carregando} className="w-full flex items-center justify-center gap-3 py-4 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-['Montserrat'] font-semibold rounded-xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)] disabled:opacity-50">
@@ -351,12 +337,13 @@ export default function BaterPonto() {
           )}
         </div>
 
+        {/* ALERTA FLUTUANDO NA BASE DA TELA */}
         {status && (
-          <div className={`fixed top-4 left-1/2 -translate-x-1/2 w-[90%] max-w-sm flex items-start text-left gap-3 p-4 rounded-xl text-sm font-medium border backdrop-blur-md z-50 shadow-2xl animate-in slide-in-from-top-4 ${status.includes('Sucesso') ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-100' : 'bg-red-950/90 border-red-500/50 text-red-100'}`}>
+          <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-sm flex items-start text-left gap-3 p-4 rounded-2xl text-sm font-medium border backdrop-blur-xl z-50 shadow-2xl animate-in slide-in-from-bottom-6 ${status.includes('Sucesso') ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-100' : 'bg-red-950/90 border-red-500/50 text-red-100'}`}>
             <div className="mt-0.5 shrink-0">
-              {status.includes('Sucesso') ? <CheckCircle2 size={18} className="text-emerald-400" /> : <AlertCircle size={18} className="text-red-400" />}
+              {status.includes('Sucesso') ? <CheckCircle2 size={20} className="text-emerald-400" /> : <AlertCircle size={20} className="text-red-400" />}
             </div>
-            <span>{status}</span>
+            <span className="leading-snug">{status}</span>
           </div>
         )}
       </div>

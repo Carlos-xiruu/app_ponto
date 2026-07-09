@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
-import { RefreshCw, MapPin, Plus, X, FileText, Send, Share2, Eye, AlertTriangle, Building2, Trash2, Search, Navigation, Loader2 } from 'lucide-react';
+import { RefreshCw, MapPin, Plus, X, FileText, Send, Share2, Eye, AlertTriangle, Building2, Trash2, Search, Navigation, Loader2, ArrowLeft } from 'lucide-react';
 
 const BadgeLocalizacao = ({ gps }) => {
   const [endereco, setEndereco] = useState('Buscando...');
@@ -214,64 +214,38 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#020617] font-['Inter'] text-slate-100">
       
-      {/* MEU TRATOR CSS: O Bloqueio da Margem Esquerda de Impressão foi injetado aqui */}
+      {/* CSS: O Motor de PDF Compacto (Focado em iOS Safari) */}
       <style>
         {`
-            html, body {
-              touch-action: pan-y;
-              overscroll-behavior-y: none;
-              -webkit-user-select: none;
-              user-select: none;
-            }
-            input, select, textarea {
-              font-size: 16px !important; 
-              -webkit-user-select: auto;
-              user-select: auto;
-            }
+            html, body { touch-action: pan-y; overscroll-behavior-y: none; -webkit-user-select: none; user-select: none; }
+            input, select, textarea { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; }
 
             @media print {
-              @page { size: ${extratoSelecionado ? 'A4 portrait' : 'A4 landscape'}; margin: 15mm; }
-              html, body, #root, main, .min-h-screen { 
-                background: white !important; 
-                color: black !important; 
-                display: block !important; 
-                width: 100% !important; 
-                margin: 0 !important; 
-                padding: 0 !important; 
-                box-sizing: border-box !important;
-              }
-              * { 
-                -webkit-print-color-adjust: exact; 
-                print-color-adjust: exact; 
-                box-shadow: none !important; 
-                color: black !important; 
-              }
+              @page { size: ${extratoSelecionado ? 'A4 portrait' : 'A4 landscape'}; margin: 10mm; }
+              html, body, #root, main, .min-h-screen { background: white !important; color: black !important; display: block !important; width: 100% !important; margin: 0 !important; padding: 0 !important; box-sizing: border-box !important; }
+              * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-shadow: none !important; color: black !important; }
               header, .tela-interativa { display: none !important; }
               
-              /* A mágica do padding forçado resolve o problema da margem colada na esquerda */
-              .area-impressao { 
-                display: block !important; 
-                position: relative !important; 
-                width: 100% !important; 
-                background: white !important; 
-                padding: 10mm 20mm !important; 
-                box-sizing: border-box !important;
-              }
+              .area-impressao { display: block !important; position: relative !important; width: 100% !important; background: white !important; padding: 10mm !important; box-sizing: border-box !important; }
               
-              .pdf-table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; table-layout: auto !important; }
-              .pdf-table th { border: 1px solid #cbd5e1 !important; padding: 10px !important; font-size: 10px !important; background-color: #f1f5f9 !important; text-transform: uppercase !important; font-weight: bold !important; text-align: left !important; }
-              .pdf-table td { border: 1px solid #cbd5e1 !important; padding: 10px !important; font-size: 12px !important; word-wrap: break-word !important; }
-              tr { page-break-inside: avoid !important; }
+              /* Tabelas Forçadas a Não Estourar */
+              .pdf-table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; table-layout: fixed !important; }
+              .pdf-table th { border: 1px solid #cbd5e1 !important; padding: 6px 8px !important; font-size: 9px !important; background-color: #f1f5f9 !important; text-transform: uppercase !important; font-weight: bold !important; text-align: left !important; }
+              .pdf-table td { border: 1px solid #cbd5e1 !important; padding: 6px 8px !important; font-size: 10px !important; word-wrap: break-word !important; }
               
-              .pdf-title { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 18px !important; margin: 0 0 5px 0 !important; text-transform: uppercase !important; border-bottom: 2px solid #cbd5e1 !important; padding-bottom: 8px !important; }
-              .pdf-subtitle { font-size: 11px !important; color: #475569 !important; margin: 8px 0 20px 0 !important; }
-              .pdf-section { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 12px !important; border-bottom: 1px solid #cbd5e1 !important; padding-bottom: 4px !important; margin-top: 25px !important; margin-bottom: 10px !important; text-transform: uppercase !important; }
-              .pdf-box { border: 1px solid #cbd5e1 !important; padding: 15px !important; margin-top: 20px !important; display: flex !important; justify-content: space-between !important; background-color: #f8fafc !important; }
+              /* A regra de quebra do iOS Safari */
+              thead { display: table-header-group !important; }
+              tr { page-break-inside: avoid !important; page-break-after: auto !important; }
+              
+              .pdf-title { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 16px !important; margin: 0 0 5px 0 !important; text-transform: uppercase !important; border-bottom: 2px solid #cbd5e1 !important; padding-bottom: 8px !important; }
+              .pdf-subtitle { font-size: 10px !important; color: #475569 !important; margin: 6px 0 15px 0 !important; }
+              .pdf-section { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 11px !important; border-bottom: 1px solid #cbd5e1 !important; padding-bottom: 4px !important; margin-top: 20px !important; margin-bottom: 8px !important; text-transform: uppercase !important; }
+              .pdf-box { border: 1px solid #cbd5e1 !important; padding: 10px !important; margin-top: 15px !important; display: flex !important; justify-content: space-between !important; background-color: #f8fafc !important; }
             }
         `}
       </style>
 
-      {/* DIMENSÃO DA TELA INTERATIVA */}
+      {/* TELA INTERATIVA */}
       <div className="tela-interativa p-4 md:p-8 max-w-[1200px] mx-auto relative z-10">
         
         {fotoExpandida && (
@@ -283,7 +257,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* MODAL HOLERITE INDIVIDUAL */}
+        {/* --- MODAL DO HOLERITE INDIVIDUAL (COM BOTÃO VOLTAR) --- */}
         {extratoSelecionado && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-3xl p-6 md:p-8 shadow-2xl relative max-h-[95vh] overflow-y-auto custom-scrollbar">
@@ -343,7 +317,11 @@ export default function Dashboard() {
                 <span className="text-3xl font-black text-blue-400 font-mono">{extratoSelecionado.horasFormatadas}</span>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-4">
+              {/* MEU NOVO BOTÃO DE VOLTAR JUNTO COM AS AÇÕES */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button onClick={() => setExtratoSelecionado(null)} className="w-full sm:w-auto px-6 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 rounded-xl transition-all border border-slate-700">
+                  <ArrowLeft size={20} /> Voltar
+                </button>
                 <button onClick={() => window.print()} className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-blue-900/20">
                   <FileText size={20} /> Imprimir PDF
                 </button>
@@ -356,7 +334,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* MODAL DE LANÇAMENTO MANUAL */}
+        {/* MODAIS MANUAIS E DE OBRA */}
         {modalAberto && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
@@ -402,7 +380,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* MODAL DE GESTÃO DE OBRAS */}
         {modalObraAberto && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-4xl p-6 md:p-8 shadow-2xl relative flex flex-col md:flex-row gap-8 max-h-[90vh] overflow-y-auto">
@@ -534,7 +511,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Dashboard Base (Sempre bloco para não bugar no Modal) */}
+        {/* Dashboard Base */}
         <div className="block">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-5">
             <div>
@@ -658,16 +635,12 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ÁREA DE IMPRESSÃO CEGA (Onde mora o código gerador de PDF) */}
+      {/* ÁREA DE IMPRESSÃO CEGA */}
       <div className="hidden print:block area-impressao font-sans text-black">
-        
         {extratoSelecionado ? (
-          
-          /* LAYOUT IMPRESSÃO: INDIVIDUAL */
           <div>
             <h1 className="pdf-title">DEMONSTRATIVO INDIVIDUAL DE JORNADA</h1>
             <p className="pdf-subtitle">Competência Fiscal: <strong>{mesFiltro.split('-')[1]}/{mesFiltro.split('-')[0]}</strong></p>
-
             <div className="pdf-section">1. Dados do Colaborador</div>
             <table className="pdf-table" style={{ marginTop: '5px', marginBottom: '20px' }}>
               <thead>
@@ -678,12 +651,11 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 <tr>
-                  <td style={{ fontWeight: 'bold', fontSize: '13px' }}>{extratoSelecionado.nome}</td>
-                  <td style={{ fontWeight: 'bold', fontSize: '13px' }}>{extratoSelecionado.cargo}</td>
+                  <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{extratoSelecionado.nome}</td>
+                  <td style={{ fontWeight: 'bold', fontSize: '12px' }}>{extratoSelecionado.cargo}</td>
                 </tr>
               </tbody>
             </table>
-
             <div className="pdf-section">2. Espelho de Ponto Detalhado</div>
             <table className="pdf-table" style={{ marginTop: '5px' }}>
               <thead>
@@ -702,7 +674,7 @@ export default function Dashboard() {
                     <td>{l.entrada?.obra || l.saida?.obra || '-'}</td>
                     <td>{l.entrada ? l.entrada.hora : '-'}</td>
                     <td>{l.saida ? l.saida.hora : '-'}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '12px' }}>
+                    <td style={{ textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '11px' }}>
                       {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
                       {l.descontouAlmoco ? ' (Almoço Desc.)' : ''}
                     </td>
@@ -710,20 +682,15 @@ export default function Dashboard() {
                 ))}
               </tbody>
             </table>
-            
             <div className="pdf-box">
-              <span style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '12px' }}>Saldo Total Acumulado no Período:</span>
-              <span style={{ fontSize: '16px', fontWeight: 'bold', fontFamily: 'monospace' }}>{extratoSelecionado.horasFormatadas}</span>
+              <span style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '11px' }}>Saldo Total Acumulado no Período:</span>
+              <span style={{ fontSize: '14px', fontWeight: 'bold', fontFamily: 'monospace' }}>{extratoSelecionado.horasFormatadas}</span>
             </div>
           </div>
-
         ) : (
-          
-          /* LAYOUT IMPRESSÃO: MENSAL GERAL */
           <div>
             <h1 className="pdf-title">RELATÓRIO GERENCIAL DE FECHAMENTO</h1>
             <p className="pdf-subtitle">Apuração do Sistema: <strong>{dataMinimaLog}</strong> até <strong>{dataMaximaLog}</strong></p>
-
             <div className="pdf-section">1. Resumo Consolidado de Horas (Banco Mensal)</div>
             <table className="pdf-table" style={{ marginTop: '5px', marginBottom: '20px' }}>
               <thead>
@@ -738,12 +705,11 @@ export default function Dashboard() {
                   <tr key={i}>
                     <td style={{ fontWeight: 'bold' }}>{r.nome}</td>
                     <td>{r.cargo}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '13px' }}>{r.horasFormatadas}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '12px' }}>{r.horasFormatadas}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-
             <div className="pdf-section">2. Espelho de Ponto Detalhado Geral</div>
             <table className="pdf-table" style={{ marginTop: '5px' }}>
               <thead>
@@ -776,7 +742,6 @@ export default function Dashboard() {
           </div>
         )}
       </div>
-
     </div>
   );
 }
