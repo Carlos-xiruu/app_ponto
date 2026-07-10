@@ -214,7 +214,6 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#020617] font-['Inter'] text-slate-100">
       
-      {/* CSS: O Motor de PDF Compacto (Focado em iOS Safari) */}
       <style>
         {`
             html, body { touch-action: pan-y; overscroll-behavior-y: none; -webkit-user-select: none; user-select: none; }
@@ -224,16 +223,14 @@ export default function Dashboard() {
               @page { size: ${extratoSelecionado ? 'A4 portrait' : 'A4 landscape'}; margin: 10mm; }
               html, body, #root, main, .min-h-screen { background: white !important; color: black !important; display: block !important; width: 100% !important; margin: 0 !important; padding: 0 !important; box-sizing: border-box !important; }
               * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-shadow: none !important; color: black !important; }
-              header, .tela-interativa { display: none !important; }
+              header, .tela-interativa, .modais-extracao { display: none !important; }
               
               .area-impressao { display: block !important; position: relative !important; width: 100% !important; background: white !important; padding: 10mm !important; box-sizing: border-box !important; }
               
-              /* Tabelas Forçadas a Não Estourar */
               .pdf-table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; table-layout: fixed !important; }
               .pdf-table th { border: 1px solid #cbd5e1 !important; padding: 6px 8px !important; font-size: 9px !important; background-color: #f1f5f9 !important; text-transform: uppercase !important; font-weight: bold !important; text-align: left !important; }
               .pdf-table td { border: 1px solid #cbd5e1 !important; padding: 6px 8px !important; font-size: 10px !important; word-wrap: break-word !important; }
               
-              /* A regra de quebra do iOS Safari */
               thead { display: table-header-group !important; }
               tr { page-break-inside: avoid !important; page-break-after: auto !important; }
               
@@ -245,29 +242,31 @@ export default function Dashboard() {
         `}
       </style>
 
-      {/* TELA INTERATIVA */}
-      <div className="tela-interativa p-4 md:p-8 max-w-[1200px] mx-auto relative z-10">
-        
+      {/* 
+        A ENGENHARIA DA CORREÇÃO (Z-INDEX):
+        Extraí os modais para FORA da div ".tela-interativa". 
+        Agora eles não estão presos em nenhum contexto de empilhamento baixo e conseguem sobrepor a barra do App.tsx.
+      */}
+      <div className="modais-extracao">
         {fotoExpandida && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <div className="relative max-w-xl w-full flex flex-col items-center">
-              <button onClick={() => setFotoExpandida(null)} className="absolute -top-12 right-0 p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-white"><X size={24} /></button>
+              <button onClick={() => setFotoExpandida(null)} className="absolute -top-12 right-0 p-3 bg-slate-800 hover:bg-slate-700 rounded-full text-white transition-colors z-50"><X size={24} /></button>
               <img src={fotoExpandida} alt="Auditoria" className="w-full h-auto max-h-[80vh] object-cover rounded-2xl border-4 border-slate-700" />
             </div>
           </div>
         )}
 
-        {/* --- MODAL DO HOLERITE INDIVIDUAL (COM BOTÃO VOLTAR) --- */}
         {extratoSelecionado && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
+          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-3xl p-6 md:p-8 shadow-2xl relative max-h-[95vh] overflow-y-auto custom-scrollbar">
               
               <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
                 <h2 className="text-xl md:text-2xl font-bold font-['Montserrat'] text-white">Demonstrativo Individual</h2>
-                <button onClick={() => setExtratoSelecionado(null)} className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition-colors"><X size={24} /></button>
+                <button onClick={() => setExtratoSelecionado(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-3 rounded-xl hover:bg-slate-800 transition-colors z-50"><X size={24} /></button>
               </div>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 bg-slate-900/50 p-5 rounded-2xl border border-slate-800">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 bg-slate-900/50 p-5 rounded-2xl border border-slate-800 mt-2">
                 <div>
                   <span className="block text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Colaborador</span>
                   <span className="font-bold text-slate-200 text-lg">{extratoSelecionado.nome}</span>
@@ -317,7 +316,6 @@ export default function Dashboard() {
                 <span className="text-3xl font-black text-blue-400 font-mono">{extratoSelecionado.horasFormatadas}</span>
               </div>
 
-              {/* MEU NOVO BOTÃO DE VOLTAR JUNTO COM AS AÇÕES */}
               <div className="flex flex-col sm:flex-row gap-3">
                 <button onClick={() => setExtratoSelecionado(null)} className="w-full sm:w-auto px-6 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 rounded-xl transition-all border border-slate-700">
                   <ArrowLeft size={20} /> Voltar
@@ -334,12 +332,11 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* MODAIS MANUAIS E DE OBRA */}
         {modalAberto && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
+          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
-              <button onClick={() => setModalAberto(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={20} /></button>
-              <h2 className="text-xl font-bold mb-6 font-['Montserrat']">Lançamento Manual</h2>
+              <button onClick={() => setModalAberto(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-3 rounded-xl hover:bg-slate-800 transition-colors z-50"><X size={20} /></button>
+              <h2 className="text-xl font-bold mb-6 font-['Montserrat'] mt-2">Lançamento Manual</h2>
               <form onSubmit={lancarPontoManual} className="flex flex-col gap-4">
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Colaborador</label>
@@ -381,11 +378,15 @@ export default function Dashboard() {
         )}
 
         {modalObraAberto && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
+          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-4xl p-6 md:p-8 shadow-2xl relative flex flex-col md:flex-row gap-8 max-h-[90vh] overflow-y-auto">
-              <button onClick={() => setModalObraAberto(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={20} /></button>
               
-              <div className="flex-1 md:border-r border-slate-800 pb-6 md:pb-0 md:pr-8">
+              {/* O famoso botão de X, agora invencível e absoluto */}
+              <button onClick={() => setModalObraAberto(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-3 rounded-xl hover:bg-slate-800 transition-colors z-50">
+                <X size={24} />
+              </button>
+              
+              <div className="flex-1 md:border-r border-slate-800 pb-6 md:pb-0 md:pr-8 mt-4 md:mt-0">
                 <h2 className="text-2xl font-bold mb-2 font-['Montserrat'] text-white flex items-center gap-2">
                   <Building2 size={24} className="text-blue-400" /> Gestão de Obras
                 </h2>
@@ -481,7 +482,7 @@ export default function Dashboard() {
                 </form>
               </div>
 
-              <div className="flex-1 flex flex-col">
+              <div className="flex-1 flex flex-col mt-4 md:mt-0">
                 <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">Obras Ativas ({obrasList.length})</h3>
                 <div className="flex flex-col gap-3 max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
                   {obrasList.length === 0 ? (
@@ -494,7 +495,7 @@ export default function Dashboard() {
                       <div key={obra.id} className="bg-slate-900/80 hover:bg-slate-800/80 border border-slate-700/60 rounded-xl p-4 flex justify-between items-center transition-colors group">
                         <div className="overflow-hidden">
                           <span className="block text-sm font-bold text-slate-100 truncate">{obra.nome}</span>
-                          <span className="inline-flex text-[11px] text-slate-400 font-mono mt-1 items-center gap-1">
+                          <span className="block text-[11px] text-slate-400 font-mono mt-1 flex items-center gap-1">
                             <MapPin size={10} className="text-blue-500" /> {obra.localizacao_gps}
                           </span>
                         </div>
@@ -510,9 +511,11 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+      </div>
 
-        {/* Dashboard Base */}
-        <div>
+      {/* TELA BASE (Sempre embaixo de todos os modais) */}
+      <div className="tela-interativa p-4 md:p-8 max-w-[1200px] mx-auto relative z-10">
+        <div className="block">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-5">
             <div>
               <h1 className="font-['Montserrat'] text-2xl md:text-3xl font-bold text-white mb-1">Painel de Fechamento</h1>
