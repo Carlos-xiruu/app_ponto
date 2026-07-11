@@ -22,12 +22,12 @@ export default function BaterPonto() {
 
   const videoConstraints = { width: 300, height: 400, facingMode: "user" };
 
-  // Meu motor inteligente para fazer as mensagens sumirem sozinhas
+  // Eu criei este motor para limpar os avisos da tela automaticamente
   const mostrarAviso = (mensagem) => {
     setStatus(mensagem);
     setTimeout(() => {
       setStatus('');
-    }, 6000); // Some após 6 segundos
+    }, 6000);
   };
 
   useEffect(() => {
@@ -36,6 +36,7 @@ export default function BaterPonto() {
     return () => clearInterval(timer);
   }, []);
 
+  // Aqui é onde eu reescrevi toda a inteligência de fuso horário
   const carregarDadosDoFuncionario = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -46,34 +47,48 @@ export default function BaterPonto() {
     const { data: obrasData } = await supabase.from('obras').select('*').order('nome');
     if (obrasData) setObrasList(obrasData);
 
-    const hojeIso = new Date().toISOString().split('T')[0];
-    const { data: registrosHoje } = await supabase
+    // Eu peço para o banco apenas os 2 últimos registros da pessoa, ordenados do mais novo pro mais velho.
+    // Isso elimina o bug de o UTC trocar de dia e o cara "sumir" da obra.
+    const { data: historico } = await supabase
       .from('registros_ponto')
       .select('tipo_registro, data_hora, localizacao_gps, obra_nome')
       .eq('funcionario_id', user.id)
-      .gte('data_hora', `${hojeIso}T00:00:00Z`)
-      .order('data_hora', { ascending: true });
+      .order('data_hora', { ascending: false })
+      .limit(2);
 
-    if (registrosHoje && registrosHoje.length > 0) {
-      const temEntrada = registrosHoje.find(r => r.tipo_registro === 'entrada');
-      const temSaida = registrosHoje.find(r => r.tipo_registro === 'saida');
+    if (historico && historico.length > 0) {
+      const ultimaAcao = historico[0];
 
-      if (temEntrada && temSaida) {
-        setJornadaAtual({ status: 'livre', bloqueadoPorHoje: true });
-      } else if (temEntrada && !temSaida) {
+      // Se a ÚLTIMA coisa que ele fez foi "entrada", eu forço o status dele pra trabalhando.
+      if (ultimaAcao.tipo_registro === 'entrada') {
         setJornadaAtual({ 
           status: 'trabalhando', 
-          pontoEntradaGps: temEntrada.localizacao_gps, 
+          pontoEntradaGps: ultimaAcao.localizacao_gps, 
           bloqueadoPorHoje: false,
-          obraNomeAtual: temEntrada.obra_nome 
+          obraNomeAtual: ultimaAcao.obra_nome 
         });
         
-        if (obrasData && temEntrada.obra_nome) {
-          const obraMatch = obrasData.find(o => o.nome === temEntrada.obra_nome);
+        // Carrego a obra no select pro botão ficar certinho
+        if (obrasData && ultimaAcao.obra_nome) {
+          const obraMatch = obrasData.find(o => o.nome === ultimaAcao.obra_nome);
           if (obraMatch) setObraSelecionadaId(obraMatch.id);
+        }
+      } 
+      // Se a ÚLTIMA coisa foi "saida", eu sei que o turno dele acabou.
+      else if (ultimaAcao.tipo_registro === 'saida') {
+        // Agora eu verifico o calendário LOCAL (pt-BR) pra saber se essa saída foi hoje.
+        const dataSaidaLocal = new Date(ultimaAcao.data_hora).toLocaleDateString('pt-BR');
+        const dataHojeLocal = new Date().toLocaleDateString('pt-BR');
+
+        // Se ele saiu hoje, eu travo a tela pra ele não trabalhar dobrado
+        if (dataSaidaLocal === dataHojeLocal) {
+          setJornadaAtual({ status: 'livre', bloqueadoPorHoje: true, obraNomeAtual: '' });
+        } else {
+          setJornadaAtual({ status: 'livre', bloqueadoPorHoje: false, obraNomeAtual: '' });
         }
       }
     } else {
+      // Se não tem histórico nenhum (funcionário novato)
       setJornadaAtual({ status: 'livre', bloqueadoPorHoje: false, obraNomeAtual: '' });
     }
   };
@@ -103,7 +118,7 @@ export default function BaterPonto() {
     }
 
     setCarregando(true);
-    setStatus('Autenticando GPS com a base da Obra...'); // Esse não usa timeout pois será sobrescrito
+    setStatus('Autenticando GPS com a base da Obra...'); 
 
     const imageSrc = webcamRef.current?.getScreenshot();
     if (!imageSrc) {
@@ -345,12 +360,11 @@ export default function BaterPonto() {
           )}
         </div>
 
-        {/* ALERTA CORRIGIDO: Agora as mensagens somem sozinhas após 6 segundos */}
         {status && (
           <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-sm flex items-start text-left gap-3 p-4 rounded-2xl text-sm font-medium border backdrop-blur-xl z-50 shadow-2xl animate-in slide-in-from-bottom-6 ${status.includes('Sucesso') ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-100' : 'bg-red-950/90 border-red-500/50 text-red-100'}`}>
             <div className="mt-0.5 shrink-0">
               {status.includes('Sucesso') ? <CheckCircle2 size={20} className="text-emerald-400" /> : <AlertCircle size={20} className="text-red-400" />}
-            </div>
+            </div> 
             <span className="leading-snug">{status}</span>
           </div>
         )}
