@@ -11,7 +11,6 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [carregando, setCarregando] = useState(true);
   
-  // Meus novos estados para interceptar a recuperação de senha
   const [precisaMudarSenha, setPrecisaMudarSenha] = useState(false);
   const [novaSenha, setNovaSenha] = useState('');
   const [atualizandoSenha, setAtualizandoSenha] = useState(false);
@@ -23,11 +22,9 @@ export default function App() {
       else setCarregando(false);
     });
 
-    // O Motor que escuta todos os eventos de segurança
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSessao(session);
 
-      // A Mágica: Se o login veio de um link de recuperação, ativa a trava!
       if (event === 'PASSWORD_RECOVERY') {
         setPrecisaMudarSenha(true);
       }
@@ -45,15 +42,27 @@ export default function App() {
 
   const checkRole = async (userId: string) => {
     setCarregando(true);
+    
+    // Rastreador ativado para depuração
+    console.log("🔍 [SISTEMA] Verificando cargo para o ID:", userId);
+    
     const { data, error } = await supabase
       .from('perfis')
       .select('is_admin')
       .eq('id', userId)
       .single();
 
-    if (!error && data) {
-      setIsAdmin(data.is_admin);
+    // Logs para o Console do Navegador
+    if (error) console.error("🚨 [SISTEMA] Erro ao buscar perfil. RLS Bloqueando?", error);
+    if (data) console.log("✅ [SISTEMA] Dados do perfil recebidos:", data);
+
+    // Garante que a leitura seja estritamente booleana
+    if (!error && data && data.is_admin === true) {
+      setIsAdmin(true);
+    } else {
+      setIsAdmin(false);
     }
+    
     setCarregando(false);
   };
 
@@ -64,7 +73,6 @@ export default function App() {
     window.location.replace('/');
   };
 
-  // Minha função que envia a nova senha para o servidor e destranca o aplicativo
   const salvarNovaSenha = async (e) => {
     e.preventDefault();
     setAtualizandoSenha(true);
@@ -74,7 +82,7 @@ export default function App() {
       alert('Erro ao atualizar senha: ' + error.message);
     } else {
       alert('Senha atualizada com sucesso! Seu acesso está liberado.');
-      setPrecisaMudarSenha(false); // Destranca a tela e deixa ele usar o app
+      setPrecisaMudarSenha(false); 
     }
     setAtualizandoSenha(false);
   };
@@ -94,7 +102,6 @@ export default function App() {
     return <Login />;
   }
 
-  // --- INTERCEPTAÇÃO DE SENHA ---
   if (precisaMudarSenha) {
     return (
       <div className="min-h-screen bg-[#020617] flex items-center justify-center p-6 font-['Inter'] relative overflow-hidden">
@@ -133,24 +140,27 @@ export default function App() {
     );
   }
 
-  // --- O APP NORMAL SEGUE ABAIXO ---
   return (
     <div className="min-h-screen bg-[#020617] font-['Inter']">
       
-      <header className="bg-[#0f172a]/80 backdrop-blur-md border-b border-slate-800 px-6 py-4 flex justify-between items-center print:hidden sticky top-0 z-40 shadow-lg">
-        <div className="flex items-center gap-2 text-emerald-500 font-['Montserrat'] font-bold tracking-wider text-lg">
-          <Hexagon size={24} className="fill-emerald-500/20" />
-          PONTO<span className="text-white">SEGURO</span>
-        </div>
-        
-        <button 
-          onClick={fazerLogout} 
-          className="flex items-center gap-2 text-slate-400 hover:text-red-400 transition-colors text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-red-500/10"
-        >
-          <LogOut size={18} />
-          <span className="hidden sm:inline">Encerrar Sessão</span>
-        </button>
-      </header>
+      {/* O Header global agora só aparece se o usuário for ADMIN. 
+          Se for funcionário (BaterPonto), esconde para não duplicar cabeçalhos! */}
+      {isAdmin && (
+        <header className="bg-[#0f172a]/80 backdrop-blur-md border-b border-slate-800 px-6 py-4 flex justify-between items-center print:hidden sticky top-0 z-40 shadow-lg">
+          <div className="flex items-center gap-2 text-emerald-500 font-['Montserrat'] font-bold tracking-wider text-lg">
+            <Hexagon size={24} className="fill-emerald-500/20" />
+            PONTO<span className="text-white">SEGURO</span>
+          </div>
+          
+          <button 
+            onClick={fazerLogout} 
+            className="flex items-center gap-2 text-slate-400 hover:text-red-400 transition-colors text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-red-500/10"
+          >
+            <LogOut size={18} />
+            <span className="hidden sm:inline">Encerrar Sessão</span>
+          </button>
+        </header>
+      )}
 
       <main>
         {isAdmin ? <Dashboard /> : <BaterPonto />}
