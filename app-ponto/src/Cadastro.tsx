@@ -1,121 +1,135 @@
 // @ts-nocheck
 import React, { useState } from 'react';
 import { supabase } from './supabaseClient';
+import { User, Mail, Lock, Loader2, ArrowLeft, Hexagon } from 'lucide-react';
 
 export default function Cadastro({ onVoltar }: { onVoltar: () => void }) {
-  // Aqui eu crio os estados para guardar o que o usuário vai digitar
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [carregando, setCarregando] = useState(false);
-  const [mensagem, setMensagem] = useState('');
+  const [mensagem, setMensagem] = useState({ texto: '', tipo: '' }); // tipo: 'sucesso' ou 'erro'
 
-  // Minha função principal para registrar o novo funcionário
   const handleCadastro = async (e: React.FormEvent) => {
     e.preventDefault();
     setCarregando(true);
-    setMensagem('Criando sua conta...');
+    setMensagem({ texto: 'Criando sua conta...', tipo: 'neutro' });
 
-    // 1. Primeiro eu peço para o Supabase criar a credencial de acesso (E-mail e Senha)
-    const { data, error } = await supabase.auth.signUp({
+    // Nós injetei o 'nome' dentro do pacote de metadados.
+    // Assim, quando a requisição bater no banco, o Trigger (Robô)
+    // vai encontrar esse nome e inseri-lo na tabela 'perfis' automaticamente.
+    const { error } = await supabase.auth.signUp({
       email,
       password: senha,
+      options: {
+        data: {
+          nome: nome // Envia o nome diretamente para os metadados do Supabase
+        }
+      }
     });
 
     if (error) {
-      setMensagem('Erro: ' + error.message);
+      setMensagem({ texto: 'Erro: ' + error.message, tipo: 'erro' });
       setCarregando(false);
       return;
     }
 
-    // 2. Se a credencial foi criada com sucesso, eu pego o ID desse novo usuário...
-    if (data.user) {
-      // ... e salvo o nome dele na minha tabela de perfis, já definindo que ele NÃO é admin
-      const { error: profileError } = await supabase.from('perfis').insert({
-        id: data.user.id,
-        nome: nome,
-        is_admin: false,
-      });
-
-      if (profileError) {
-        console.error('Erro ao salvar perfil:', profileError);
-        setMensagem('Conta criada, mas houve um erro ao salvar o nome.');
-      } else {
-        setMensagem('Conta criada com sucesso! Você já pode fazer login.');
-        // Dou um tempinho de 2 segundos para ele ler a mensagem e volto pra tela de login
-        setTimeout(() => {
-          onVoltar();
-        }, 2000);
-      }
-    }
-
+    // Se passou, o e-mail de confirmação foi disparado
+    setMensagem({ texto: 'Conta criada! Verifique seu e-mail para confirmar.', tipo: 'sucesso' });
     setCarregando(false);
   };
 
-  // Renderizo a minha interface de formulário
   return (
-    <div style={{ padding: '20px', maxWidth: '400px', margin: '0 auto', fontFamily: 'sans-serif' }}>
-      <h2 style={{ textAlign: 'center', color: '#333' }}>Criar Nova Conta</h2>
-      <p style={{ textAlign: 'center', color: '#666', fontSize: '14px' }}>Cadastre-se para bater seu ponto</p>
+    <div className="min-h-screen bg-[#020617] flex items-center justify-center p-4 sm:p-6 font-['Inter'] relative overflow-hidden">
+      
+      {/* Efeitos de Fundo Modernos */}
+      <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-emerald-600/20 rounded-full blur-[120px] pointer-events-none"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[400px] h-[400px] bg-blue-600/10 rounded-full blur-[100px] pointer-events-none"></div>
 
-      <form onSubmit={handleCadastro} style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '20px' }}>
-        <input
-          type="text"
-          placeholder="Seu Nome Completo"
-          value={nome}
-          onChange={(e) => setNome(e.target.value)}
-          required
-          style={{ padding: '12px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '16px' }}
-        />
-        <input
-          type="email"
-          placeholder="Seu E-mail"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          style={{ padding: '12px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '16px' }}
-        />
-        <input
-          type="password"
-          placeholder="Crie uma Senha (mínimo 6 caracteres)"
-          value={senha}
-          onChange={(e) => setSenha(e.target.value)}
-          required
-          style={{ padding: '12px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '16px' }}
-        />
+      <div className="w-full max-w-md bg-[#0f172a]/80 backdrop-blur-xl border border-slate-800 rounded-[2rem] p-8 shadow-2xl relative z-10 flex flex-col items-center">
         
-        <button 
-          type="submit" 
-          disabled={carregando}
-          style={{ 
-            padding: '12px', 
-            backgroundColor: carregando ? '#ccc' : '#28a745', 
-            color: '#fff', 
-            border: 'none', 
-            borderRadius: '6px', 
-            fontSize: '16px', 
-            cursor: carregando ? 'not-allowed' : 'pointer',
-            fontWeight: 'bold'
-          }}
-        >
-          {carregando ? 'Cadastrando...' : 'Cadastrar'}
-        </button>
-      </form>
-
-      {mensagem && (
-        <div style={{ marginTop: '15px', padding: '10px', backgroundColor: '#e9ecef', borderRadius: '6px', textAlign: 'center' }}>
-          {mensagem}
+        {/* Cabeçalho */}
+        <div className="flex items-center gap-2 text-emerald-500 font-['Montserrat'] font-bold tracking-wider text-xl mb-2">
+          <Hexagon size={28} className="fill-emerald-500/20" />
+          PONTO<span className="text-white">SEGURO</span>
         </div>
-      )}
+        <h2 className="text-xl font-bold text-white font-['Montserrat'] mb-1 text-center">Criar Conta</h2>
+        <p className="text-sm text-slate-400 text-center mb-8">Cadastre-se para iniciar seus registros</p>
 
-      {/* Botão para voltar para a tela de Login caso o usuário desista */}
-      <div style={{ marginTop: '20px', textAlign: 'center' }}>
+        <form onSubmit={handleCadastro} className="w-full flex flex-col gap-4">
+          
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-emerald-500 transition-colors">
+              <User size={18} />
+            </div>
+            <input
+              type="text"
+              placeholder="Seu Nome Completo"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              required
+              className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-3.5 pl-11 pr-4 text-sm text-white focus:border-emerald-500 outline-none transition-all placeholder:text-slate-500"
+            />
+          </div>
+
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-emerald-500 transition-colors">
+              <Mail size={18} />
+            </div>
+            <input
+              type="email"
+              placeholder="Seu E-mail Corporativo"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-3.5 pl-11 pr-4 text-sm text-white focus:border-emerald-500 outline-none transition-all placeholder:text-slate-500"
+            />
+          </div>
+
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-emerald-500 transition-colors">
+              <Lock size={18} />
+            </div>
+            <input
+              type="password"
+              placeholder="Crie uma Senha (mínimo 6)"
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              required
+              minLength={6}
+              className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-3.5 pl-11 pr-4 text-sm text-white focus:border-emerald-500 outline-none transition-all placeholder:text-slate-500"
+            />
+          </div>
+
+          <button 
+            type="submit" 
+            disabled={carregando}
+            className="mt-2 w-full flex items-center justify-center gap-2 py-4 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold rounded-2xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {carregando ? <Loader2 className="animate-spin" size={20} /> : 'Finalizar Cadastro'}
+          </button>
+        </form>
+
+        {/* Mensagem de Feedback */}
+        {mensagem.texto && (
+          <div className={`mt-6 w-full p-4 rounded-xl text-sm font-medium text-center border ${
+            mensagem.tipo === 'sucesso' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
+            mensagem.tipo === 'erro' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+            'bg-slate-800/50 border-slate-700 text-slate-300'
+          }`}>
+            {mensagem.texto}
+          </div>
+        )}
+
+        {/* Botão Voltar */}
         <button 
           onClick={onVoltar}
-          style={{ background: 'none', border: 'none', color: '#007bff', cursor: 'pointer', textDecoration: 'underline' }}
+          className="mt-8 flex items-center gap-2 text-slate-400 hover:text-emerald-400 transition-colors text-sm font-semibold group"
         >
-          Já tem uma conta? Faça login aqui
+          <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
+          Já tenho uma conta
         </button>
+
       </div>
     </div>
   );
