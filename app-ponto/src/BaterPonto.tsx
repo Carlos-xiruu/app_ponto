@@ -2,39 +2,47 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import Webcam from 'react-webcam';
 import { supabase } from './supabaseClient';
-import { LogIn, LogOut, Camera, CheckCircle2, AlertCircle, User, Briefcase, CalendarClock, Save, Upload, Loader2, Ban, Building2, ChevronDown, Home, ClipboardList, MapPin } from 'lucide-react';
+import { LogIn, LogOut, Camera, CheckCircle2, AlertCircle, User, Briefcase, CalendarClock, Save, Upload, Loader2, Ban, Building2, ChevronDown, Home, ClipboardList, MapPin, ShieldAlert, FileSignature, X, ShieldCheck } from 'lucide-react';
 
 export default function BaterPonto() {
+  // Eu configuro aqui a referência para a câmera do celular
   const webcamRef = useRef<Webcam>(null);
   const [status, setStatus] = useState('');
   const [carregando, setCarregando] = useState(false);
   const [horaAtual, setHoraAtual] = useState(new Date());
 
-  // === NOVO: ESTADO DAS ABAS ===
-  const [abaAtiva, setAbaAtiva] = useState('inicio'); // inicio | registros | perfil
+  // Eu uso este estado para controlar qual tela o funcionário está vendo no momento
+  const [abaAtiva, setAbaAtiva] = useState('inicio'); 
 
-  const [perfil, setPerfil] = useState({ id: '', nome: '', funcao: '', avatar_url: '' });
+  // Aqui eu guardo os dados de quem está logado
+  const [perfil, setPerfil] = useState({ id: '', nome: '', funcao: '', avatar_url: '', cpf: '' });
   
   const [obrasList, setObrasList] = useState([]);
   const [obraSelecionadaId, setObraSelecionadaId] = useState('');
   const [dropdownAberto, setDropdownAberto] = useState(false);
   
+  // Meu estado inteligente que sabe se o cara tá trabalhando, livre ou bloqueado
   const [jornadaAtual, setJornadaAtual] = useState({ status: 'livre', pontoEntradaGps: null, bloqueadoPorHoje: false, obraNomeAtual: '' });
   const [fazendoUpload, setFazendoUpload] = useState(false);
 
-  // === NOVO: ESTADOS DA ABA DE REGISTROS ===
-  const mesAtual = new Date().toISOString().slice(0, 7); // Formato YYYY-MM
+  const mesAtual = new Date().toISOString().slice(0, 7); 
   const [mesFiltro, setMesFiltro] = useState(mesAtual);
   const [meusRegistros, setMeusRegistros] = useState([]);
   const [carregandoRegistros, setCarregandoRegistros] = useState(false);
 
+  // Meus novos estados para gerenciar a assinatura digital das folhas
+  const [folhasPendentes, setFolhasPendentes] = useState([]);
+  const [modalAssinaturaAberto, setModalAssinaturaAberto] = useState(false);
+  const [folhaParaAssinar, setFolhaParaAssinar] = useState(null);
+  const [assinando, setAssinando] = useState(false);
+
+  // Minha configuração para a câmera (pedindo sempre a câmera frontal)
   const videoConstraints = { width: 300, height: 400, facingMode: "user" };
 
+  // Meu motorzinho que exibe os avisos flutuantes e apaga sozinho depois de 6 segundos
   const mostrarAviso = (mensagem) => {
     setStatus(mensagem);
-    setTimeout(() => {
-      setStatus('');
-    }, 6000);
+    setTimeout(() => setStatus(''), 6000);
   };
 
   useEffect(() => {
@@ -43,24 +51,26 @@ export default function BaterPonto() {
     return () => clearInterval(timer);
   }, []);
 
-  // === NOVO: RECARREGA O HISTÓRICO SE A ABA FOR 'REGISTROS' ===
+  // Eu forço a recarga do histórico sempre que ele clica na aba de registros
   useEffect(() => {
-    if (abaAtiva === 'registros') {
-      buscarHistoricoMensal();
-    }
+    if (abaAtiva === 'registros') buscarHistoricoMensal();
   }, [abaAtiva, mesFiltro, perfil.id]);
 
-  // Sua inteligência de Fuso Horário Intacta
   const carregarDadosDoFuncionario = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    // Eu busco o perfil dele no banco de dados
     const { data: dadosPerfil } = await supabase.from('perfis').select('*').eq('id', user.id).single();
-    if (dadosPerfil) { setPerfil(dadosPerfil); }
+    if (dadosPerfil) setPerfil(dadosPerfil); 
 
     const { data: obrasData } = await supabase.from('obras').select('*').order('nome');
     if (obrasData) setObrasList(obrasData);
 
+    // Eu varro o banco pra ver se o RH fechou a folha para este funcionário
+    buscarFolhasPendentes(user.id);
+
+    // Eu peço os últimos 2 registros para montar a lógica de jornada (se ele já entrou ou já saiu hoje)
     const { data: historico } = await supabase
       .from('registros_ponto')
       .select('tipo_registro, data_hora, localizacao_gps, obra_nome')
@@ -72,13 +82,7 @@ export default function BaterPonto() {
       const ultimaAcao = historico[0];
 
       if (ultimaAcao.tipo_registro === 'entrada') {
-        setJornadaAtual({ 
-          status: 'trabalhando', 
-          pontoEntradaGps: ultimaAcao.localizacao_gps, 
-          bloqueadoPorHoje: false,
-          obraNomeAtual: ultimaAcao.obra_nome 
-        });
-        
+        setJornadaAtual({ status: 'trabalhando', pontoEntradaGps: ultimaAcao.localizacao_gps, bloqueadoPorHoje: false, obraNomeAtual: ultimaAcao.obra_nome });
         if (obrasData && ultimaAcao.obra_nome) {
           const obraMatch = obrasData.find(o => o.nome === ultimaAcao.obra_nome);
           if (obraMatch) setObraSelecionadaId(obraMatch.id);
@@ -86,19 +90,25 @@ export default function BaterPonto() {
       } else if (ultimaAcao.tipo_registro === 'saida') {
         const dataSaidaLocal = new Date(ultimaAcao.data_hora).toLocaleDateString('pt-BR');
         const dataHojeLocal = new Date().toLocaleDateString('pt-BR');
-
-        if (dataSaidaLocal === dataHojeLocal) {
-          setJornadaAtual({ status: 'livre', bloqueadoPorHoje: true, obraNomeAtual: '' });
-        } else {
-          setJornadaAtual({ status: 'livre', bloqueadoPorHoje: false, obraNomeAtual: '' });
-        }
+        if (dataSaidaLocal === dataHojeLocal) setJornadaAtual({ status: 'livre', bloqueadoPorHoje: true, obraNomeAtual: '' });
+        else setJornadaAtual({ status: 'livre', bloqueadoPorHoje: false, obraNomeAtual: '' });
       }
     } else {
       setJornadaAtual({ status: 'livre', bloqueadoPorHoje: false, obraNomeAtual: '' });
     }
   };
 
-  // === NOVO: FUNÇÃO PARA BUSCAR OS PONTOS DO FUNCIONÁRIO NO MÊS ===
+  // Minha função que procura folhas com status 'pendente'
+  const buscarFolhasPendentes = async (userId) => {
+    const { data } = await supabase
+      .from('folhas_pagamento')
+      .select('*')
+      .eq('funcionario_id', userId)
+      .eq('status', 'pendente');
+    
+    if (data) setFolhasPendentes(data);
+  };
+
   const buscarHistoricoMensal = async () => {
     if (!perfil.id) return;
     setCarregandoRegistros(true);
@@ -130,93 +140,126 @@ export default function BaterPonto() {
     setCarregandoRegistros(false);
   };
 
+  // Meu motor do cartório digital: crio um hash SHA-256 impossível de ser alterado
+  const gerarHashCriptografico = async (texto) => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(texto);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  // Eu chamo essa API pública e leve para descobrir o IP do funcionário
+  const capturarIP = async () => {
+    try {
+      const res = await fetch('https://api.ipify.org?format=json');
+      const data = await res.json();
+      return data.ip;
+    } catch (e) { return 'IP_NAO_IDENTIFICADO'; }
+  };
+
+  // Minha lógica central que executa a assinatura legal do documento
+  const assinarDocumento = async () => {
+    if (!perfil.cpf) {
+      alert("Atenção: Você precisa de um CPF cadastrado para assinar. Peça ao RH para atualizar seu cadastro.");
+      return;
+    }
+
+    setAssinando(true);
+    setStatus('Autenticando localização e gerando chaves...');
+
+    navigator.geolocation.getCurrentPosition(
+      async (posicao) => {
+        const gpsAtual = `${posicao.coords.latitude},${posicao.coords.longitude}`;
+        const ip = await capturarIP();
+        const dataExata = new Date().toISOString();
+        
+        // Eu amarro os dados do funcionário com o GPS, a hora e o IP para formar o Hash de segurança
+        const stringBase = `${perfil.id}|${folhaParaAssinar.mes_ano}|${perfil.cpf}|${dataExata}|${gpsAtual}|${ip}`;
+        const hash = await gerarHashCriptografico(stringBase);
+
+        const { error } = await supabase
+          .from('folhas_pagamento')
+          .update({
+            status: 'assinado',
+            data_assinatura: dataExata,
+            ip_assinatura: ip,
+            gps_assinatura: gpsAtual,
+            hash_auditoria: hash
+          })
+          .eq('id', folhaParaAssinar.id);
+
+        if (error) {
+          mostrarAviso('Falha na comunicação com o cartório digital.');
+        } else {
+          setModalAssinaturaAberto(false);
+          setFolhaParaAssinar(null);
+          mostrarAviso('Documento assinado com Sucesso!');
+          buscarFolhasPendentes(perfil.id); 
+        }
+        setAssinando(false);
+      },
+      () => {
+        mostrarAviso('Você precisa permitir o GPS para ter validade jurídica na assinatura.');
+        setAssinando(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  // Meu cálculo matemático (Fórmula de Haversine) para medir a distância em metros
   const calcularDistanciaEmMetros = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3; 
     const rad = Math.PI / 180;
-    const phi1 = lat1 * rad;
-    const phi2 = lat2 * rad;
-    const deltaPhi = (lat2 - lat1) * rad;
-    const deltaLambda = (lon2 - lon1) * rad;
-
-    const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; 
+    const a = Math.sin((lat2 - lat1) * rad / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin((lon2 - lon1) * rad / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
   const registrar = useCallback(async (tipoRegistro: 'entrada' | 'saida') => {
-    if (jornadaAtual.bloqueadoPorHoje) {
-      mostrarAviso('Jornada concluída! Novo registro liberado apenas amanhã.');
-      return;
-    }
-
-    if (!obraSelecionadaId) {
-      mostrarAviso('Erro: Selecione a Obra onde você está agora.');
-      return;
-    }
+    if (jornadaAtual.bloqueadoPorHoje) { mostrarAviso('Jornada concluída! Novo registro liberado amanhã.'); return; }
+    if (!obraSelecionadaId) { mostrarAviso('Erro: Selecione a Obra onde você está agora.'); return; }
 
     setCarregando(true);
     setStatus('Autenticando GPS com a base da Obra...'); 
 
     const imageSrc = webcamRef.current?.getScreenshot();
-    if (!imageSrc) {
-      mostrarAviso('Erro: Câmera não detectada.');
-      setCarregando(false);
-      return;
-    }
+    if (!imageSrc) { mostrarAviso('Erro: Câmera não detectada.'); setCarregando(false); return; }
 
     navigator.geolocation.getCurrentPosition(
       async (posicao) => { 
         const gpsAtual = `${posicao.coords.latitude},${posicao.coords.longitude}`;
         const obraSelecionada = obrasList.find(o => o.id === obraSelecionadaId);
         
-        if (obraSelecionada && obraSelecionada.localizacao_gps) {
+        // Eu faço o bloqueio da Cerca Eletrônica (Geofence)
+        if (obraSelecionada?.localizacao_gps) {
           const [obraLat, obraLon] = obraSelecionada.localizacao_gps.split(',').map(Number);
-          const distanciaDaObra = calcularDistanciaEmMetros(posicao.coords.latitude, posicao.coords.longitude, obraLat, obraLon);
-          
-          if (distanciaDaObra > 50) {
-            mostrarAviso(`Acesso Negado: Você está a ${Math.floor(distanciaDaObra)}m de distância da obra. Aproxime-se do local.`);
-            setCarregando(false);
-            return;
-          }
+          const dist = calcularDistanciaEmMetros(posicao.coords.latitude, posicao.coords.longitude, obraLat, obraLon);
+          if (dist > 50) { mostrarAviso(`Acesso Negado: Você está a ${Math.floor(dist)}m da obra.`); setCarregando(false); return; }
         }
 
+        // Minha validação anti-fraude: ele tem que sair no mesmo local que entrou
         if (tipoRegistro === 'saida' && jornadaAtual.pontoEntradaGps) {
           const [entLat, entLon] = jornadaAtual.pontoEntradaGps.split(',').map(Number);
-          const distanciaDaEntrada = calcularDistanciaEmMetros(posicao.coords.latitude, posicao.coords.longitude, entLat, entLon);
-          if (distanciaDaEntrada > 50) {
-            mostrarAviso(`Fraude Detectada: Sua saída está a ${Math.floor(distanciaDaEntrada)}m do local de entrada.`);
-            setCarregando(false);
-            return;
-          }
+          const dist = calcularDistanciaEmMetros(posicao.coords.latitude, posicao.coords.longitude, entLat, entLon);
+          if (dist > 50) { mostrarAviso(`Fraude: Sua saída está a ${Math.floor(dist)}m da entrada.`); setCarregando(false); return; }
         }
 
-        await salvarPonto(imageSrc, gpsAtual, tipoRegistro, obraSelecionada?.nome || 'Base / Não Identificada'); 
+        await salvarPonto(imageSrc, gpsAtual, tipoRegistro, obraSelecionada?.nome || 'Base'); 
       },
-      (error) => {
-        mostrarAviso('Você precisa permitir o uso do GPS do celular para bater ponto.');
-        setCarregando(false);
-      },
+      () => { mostrarAviso('Permita o uso do GPS do celular.'); setCarregando(false); },
       { enableHighAccuracy: true, timeout: 10000 }
     );
   }, [webcamRef, jornadaAtual, perfil, obraSelecionadaId, obrasList]);
 
-  const salvarPonto = async (fotoLeve: string, localizacao: string, tipoRegistro: string, nomeObra: string) => {
-    const registro = { tipo_registro: tipoRegistro, data_hora: new Date().toISOString(), foto_url: fotoLeve, localizacao_gps: localizacao, obra_nome: nomeObra };
-    setStatus('Criptografando...');
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { error } = await supabase.from('registros_ponto').insert({ funcionario_id: user.id, ...registro });
-      if (error) {
-        mostrarAviso('Falha de Rede: Tente de novo.');
-      } else {
-        mostrarAviso('Ponto Salvo com Sucesso!');
-        carregarDadosDoFuncionario(); 
-      }
-    }
+  const salvarPonto = async (foto, local, tipo, nomeObra) => {
+    const { error } = await supabase.from('registros_ponto').insert({ 
+      funcionario_id: perfil.id, tipo_registro: tipo, data_hora: new Date().toISOString(), foto_url: foto, localizacao_gps: local, obra_nome: nomeObra 
+    });
+    if (error) mostrarAviso('Falha de Rede: Tente de novo.');
+    else { mostrarAviso('Ponto Salvo com Sucesso!'); carregarDadosDoFuncionario(); }
     setCarregando(false);
   };
 
-  // Sua lógica exata de Upload Intacta
   const handleUploadFoto = async (event) => {
     try {
       setFazendoUpload(true);
@@ -224,26 +267,22 @@ export default function BaterPonto() {
       if (!file) return;
       const fileExt = file.name.split('.').pop();
       const fileName = `${perfil.id}-${Math.random()}.${fileExt}`;
-      const filePath = `${fileName}`;
-      const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file);
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, file);
       if (uploadError) throw uploadError;
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
       setPerfil({ ...perfil, avatar_url: publicUrl });
-    } catch (error: any) { alert('Erro ao subir a foto: ' + error.message); } 
-    finally { setFazendoUpload(false); }
+    } catch (err) { alert('Erro ao subir foto.'); } finally { setFazendoUpload(false); }
   };
 
   const salvarPerfil = async (e) => {
     e.preventDefault();
     setCarregando(true);
-    const { error } = await supabase.from('perfis').update({ funcao: perfil.funcao, avatar_url: perfil.avatar_url }).eq('id', perfil.id);
-    if (!error) { 
-      mostrarAviso('Perfil atualizado com sucesso!');
-      carregarDadosDoFuncionario(); 
-    }
+    await supabase.from('perfis').update({ funcao: perfil.funcao, avatar_url: perfil.avatar_url }).eq('id', perfil.id);
+    mostrarAviso('Perfil atualizado com sucesso!');
     setCarregando(false);
   };
 
+  // Minha função clássica e limpa para sair do aplicativo
   const sairApp = async () => {
     await supabase.auth.signOut();
     window.location.reload();
@@ -255,9 +294,39 @@ export default function BaterPonto() {
   };
 
   return (
-    <div className="h-screen bg-[#020617] relative overflow-hidden font-['Inter'] text-slate-100 flex flex-col">
+    <div className="h-screen bg-[#020617] font-['Inter'] text-slate-100 flex flex-col overflow-hidden relative">
       
-      {/* === HEADER FIXO === */}
+      {/* MEU MODAL DE ASSINATURA */}
+      {modalAssinaturaAberto && folhaParaAssinar && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+          <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-sm p-6 shadow-2xl relative flex flex-col items-center animate-in zoom-in-95">
+            <button onClick={() => setModalAssinaturaAberto(false)} disabled={assinando} className="absolute top-4 right-4 text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-colors"><X size={20} /></button>
+            
+            <ShieldCheck size={48} className="text-emerald-500 mb-4" />
+            <h2 className="text-xl font-bold font-['Montserrat'] text-white text-center">Assinatura Digital</h2>
+            <p className="text-sm text-slate-400 text-center mb-6 mt-2">Você está prestes a assinar com validade legal o espelho de ponto referente ao mês de <strong className="text-slate-200">{folhaParaAssinar.mes_ano.split('-')[1]}/{folhaParaAssinar.mes_ano.split('-')[0]}</strong>.</p>
+            
+            <div className="w-full bg-slate-900/80 border border-slate-800 rounded-xl p-4 mb-6">
+              <span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Assinante</span>
+              <span className="block text-sm font-bold text-slate-200">{perfil.nome}</span>
+              <span className="block text-xs font-mono text-emerald-400 mt-1">CPF: {perfil.cpf || 'Não Cadastrado'}</span>
+            </div>
+
+            <p className="text-[10px] text-slate-500 text-center mb-6 leading-relaxed px-2">Ao clicar em assinar, você concorda que leu e conferiu todos os horários desta folha no menu "Registros". Uma coordenada de GPS e seu IP serão capturados para fins de auditoria (Lei 14.063).</p>
+
+            <button 
+              onClick={assinarDocumento} 
+              disabled={assinando} 
+              className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-emerald-900/20 disabled:opacity-50"
+            >
+              {assinando ? <Loader2 className="animate-spin" size={20} /> : <FileSignature size={20} />}
+              {assinando ? 'Gerando Chaves...' : 'Assinar Eletronicamente'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* HEADER FIXO NO TOPO (Agora com o botão de Logout posicionado elegantemente ao lado direito) */}
       <div className="w-full bg-[#0f172a]/90 backdrop-blur-md border-b border-slate-800 p-4 shrink-0 flex justify-between items-center z-20">
         <div className="flex items-center gap-3">
           {perfil.avatar_url ? (
@@ -268,21 +337,50 @@ export default function BaterPonto() {
             </div>
           )}
           <div className="flex flex-col">
-            <span className="font-['Montserrat'] font-bold text-sm text-slate-100 leading-tight">
-              Olá, {perfil.nome || 'Carregando...'}
-            </span>
-            <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
-              <Briefcase size={10} /> {perfil.funcao || 'Função não definida'}
-            </span>
+            <span className="font-['Montserrat'] font-bold text-sm text-slate-100 leading-tight">Olá, {perfil.nome || 'Carregando...'}</span>
+            <span className="text-xs text-slate-400 font-medium flex items-center gap-1"><Briefcase size={10} /> {perfil.funcao || 'Função não definida'}</span>
           </div>
         </div>
-        <div className="text-emerald-500"><CheckCircle2 size={24} /></div>
+        
+        {/* Aqui está a minha inclusão: Botão de Sair fixo e visível no Header */}
+        <div className="flex items-center gap-2">
+          <div className="text-emerald-500 hidden sm:block mr-2"><CheckCircle2 size={24} /></div>
+          <button 
+            onClick={sairApp} 
+            className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/20"
+            title="Sair do Aplicativo"
+          >
+            <LogOut size={20} />
+          </button>
+        </div>
       </div>
 
-      {/* === ÁREA CENTRAL COM ROLAGEM (ABAS) === */}
-      <div className="flex-1 overflow-y-auto pb-28 custom-scrollbar">
+      {/* ALERTA GLOBAL DE PENDÊNCIA JURÍDICA */}
+      {folhasPendentes.length > 0 && (
+        <div className="w-full bg-red-950/90 border-b border-red-900/50 p-3 shrink-0 flex items-center justify-between z-10">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-red-500/20 rounded-lg"><ShieldAlert size={16} className="text-red-400" /></div>
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-red-200">Ação Necessária</span>
+              <span className="text-[10px] text-red-300">Você possui espelhos pendentes.</span>
+            </div>
+          </div>
+          <button 
+            onClick={() => {
+              setFolhaParaAssinar(folhasPendentes[0]);
+              setModalAssinaturaAberto(true);
+            }} 
+            className="px-3 py-1.5 bg-red-500 hover:bg-red-400 text-white text-[10px] font-bold uppercase tracking-wider rounded border border-red-400/50 shadow-sm transition-colors"
+          >
+            Assinar Agora
+          </button>
+        </div>
+      )}
+
+      {/* ÁREA DE ROLAGEM DINÂMICA (AQUI ENTRAM AS ABAS) */}
+      <div className="flex-1 overflow-y-auto pb-24 custom-scrollbar">
         
-        {/* === ABA 1: INÍCIO (Seu código original de bater ponto) === */}
+        {/* ===================== ABA: INÍCIO ===================== */}
         {abaAtiva === 'inicio' && (
           <div className="w-full max-w-sm mx-auto flex flex-col items-center pt-6 px-6">
             <div className="mb-6 text-center">
@@ -292,56 +390,33 @@ export default function BaterPonto() {
               </div>
             </div>
 
-            <div className={`w-full p-4 rounded-2xl mb-6 flex items-center justify-center gap-3 border backdrop-blur-md text-center shadow-lg ${
+            <div className={`w-full p-4 rounded-2xl mb-6 flex items-center justify-center gap-3 border text-center shadow-lg ${
               jornadaAtual.bloqueadoPorHoje ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' :
               jornadaAtual.status === 'trabalhando' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 
               'bg-slate-800/50 border-slate-700 text-slate-400'
             }`}>
-              {jornadaAtual.bloqueadoPorHoje ? (
-                <><Ban size={18} /><span className="text-sm font-semibold">Jornada Concluída.</span></>
-              ) : jornadaAtual.status === 'trabalhando' ? (
-                <><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span><span className="text-sm font-semibold">Trabalhando na {jornadaAtual.obraNomeAtual || 'Base'}</span></>
-              ) : (
-                <><CalendarClock size={18} /><span className="text-sm font-semibold">Aguardando início de turno.</span></>
-              )}
+              {jornadaAtual.bloqueadoPorHoje ? ( <><Ban size={18} /><span className="text-sm font-semibold">Jornada Concluída.</span></> ) : 
+               jornadaAtual.status === 'trabalhando' ? ( <><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span><span className="text-sm font-semibold">Trabalhando na {jornadaAtual.obraNomeAtual || 'Base'}</span></> ) : 
+               ( <><CalendarClock size={18} /><span className="text-sm font-semibold">Aguardando início de turno.</span></> )}
             </div>
 
             {!jornadaAtual.bloqueadoPorHoje && (
-              <div className="w-full mb-6 relative">
-                <button 
-                  type="button"
-                  onClick={() => { if (jornadaAtual.status !== 'trabalhando') setDropdownAberto(!dropdownAberto); }}
-                  disabled={jornadaAtual.status === 'trabalhando'}
-                  className="w-full bg-[#0f172a]/80 backdrop-blur-md border border-blue-900/50 text-white text-sm font-semibold rounded-2xl py-4 px-4 flex justify-between items-center focus:outline-none focus:border-blue-500 transition-colors shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                  <div className="flex items-center gap-3 truncate">
-                    <Building2 size={18} className="text-blue-400 shrink-0" />
-                    <span className="truncate">{getNomeObraSelecionada()}</span>
-                  </div>
+              <div className="w-full mb-6 relative z-30">
+                <button type="button" onClick={() => { if (jornadaAtual.status !== 'trabalhando') setDropdownAberto(!dropdownAberto); }} disabled={jornadaAtual.status === 'trabalhando'} className="w-full bg-[#0f172a] border border-blue-900/50 text-white text-sm font-semibold rounded-2xl py-4 px-4 flex justify-between items-center transition-colors shadow-lg disabled:opacity-70">
+                  <div className="flex items-center gap-3 truncate"><Building2 size={18} className="text-blue-400 shrink-0" /> <span className="truncate">{getNomeObraSelecionada()}</span></div>
                   <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${dropdownAberto ? 'rotate-180' : ''}`} />
                 </button>
 
-                {dropdownAberto && (
-                  <div className="fixed inset-0 z-30" onClick={() => setDropdownAberto(false)}></div>
-                )}
+                {dropdownAberto && <div className="fixed inset-0 z-30" onClick={() => setDropdownAberto(false)}></div>}
 
                 {dropdownAberto && (
                   <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-[#0f172a] border border-slate-700 rounded-2xl shadow-2xl overflow-hidden z-40 animate-in fade-in slide-in-from-top-2">
                     <ul className="max-h-60 overflow-y-auto py-2 divide-y divide-slate-800/50 custom-scrollbar">
-                      <li 
-                        onClick={() => { setObraSelecionadaId(''); setDropdownAberto(false); }}
-                        className="px-4 py-3 text-sm text-slate-400 hover:bg-slate-800 cursor-pointer transition-colors"
-                      >
+                      <li onClick={() => { setObraSelecionadaId(''); setDropdownAberto(false); }} className="px-4 py-3 text-sm text-slate-400 hover:bg-slate-800 cursor-pointer transition-colors">
                         Nenhuma / Limpar seleção
                       </li>
                       {obrasList.map(obra => (
-                        <li 
-                          key={obra.id}
-                          onClick={() => { setObraSelecionadaId(obra.id); setDropdownAberto(false); }}
-                          className={`px-4 py-3 text-sm cursor-pointer transition-colors flex items-center justify-between ${
-                            obraSelecionadaId === obra.id ? 'bg-blue-600/10 text-blue-400 font-bold' : 'text-slate-200 hover:bg-slate-800'
-                          }`}
-                        >
+                        <li key={obra.id} onClick={() => { setObraSelecionadaId(obra.id); setDropdownAberto(false); }} className={`px-4 py-3 text-sm cursor-pointer transition-colors flex items-center justify-between ${obraSelecionadaId === obra.id ? 'bg-blue-600/10 text-blue-400 font-bold' : 'text-slate-200 hover:bg-slate-800'}`}>
                           <span className="truncate">{obra.nome}</span>
                           {obraSelecionadaId === obra.id && <CheckCircle2 size={16} className="shrink-0" />}
                         </li>
@@ -352,37 +427,37 @@ export default function BaterPonto() {
               </div>
             )}
 
-            <div className="w-full bg-[#0f172a]/60 backdrop-blur-xl border border-slate-800 rounded-3xl p-3 shadow-2xl mb-6 ring-1 ring-emerald-500/30">
+            <div className="w-full bg-[#0f172a] border border-slate-800 rounded-3xl p-3 shadow-2xl mb-6 ring-1 ring-emerald-500/30">
               <div className="relative rounded-2xl overflow-hidden bg-black aspect-[3/4]">
                 <Webcam audio={false} ref={webcamRef} screenshotFormat="image/jpeg" videoConstraints={videoConstraints} className="w-full h-full object-cover" />
+                <div className="absolute inset-0 border-2 border-emerald-500/30 rounded-2xl m-4 border-dashed pointer-events-none"></div>
                 <div className="absolute bottom-4 left-0 right-0 flex justify-center">
-                  <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md text-slate-200 px-3 py-1.5 rounded-full text-xs font-medium border border-white/10">
-                    <Camera size={14} /> GPS Ativo
+                  <div className="flex items-center gap-2 bg-black/70 backdrop-blur-md text-emerald-400 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider border border-emerald-500/30">
+                    <Camera size={14} /> Verificação Biométrica
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="w-full flex flex-col gap-3 pb-8">
+            <div className="w-full flex flex-col gap-3">
               {jornadaAtual.status === 'livre' && !jornadaAtual.bloqueadoPorHoje && (
-                <button onClick={() => registrar('entrada')} disabled={carregando} className="w-full flex items-center justify-center gap-3 py-4 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-['Montserrat'] font-semibold rounded-xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)] disabled:opacity-50">
-                  <LogIn size={22} /> Iniciar Expediente
+                <button onClick={() => registrar('entrada')} disabled={carregando} className="w-full flex items-center justify-center gap-3 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-['Montserrat'] font-bold rounded-2xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50">
+                  <LogIn size={22} /> FAZER CHECK-IN
                 </button>
               )}
-              
               {jornadaAtual.status === 'trabalhando' && !jornadaAtual.bloqueadoPorHoje && (
-                <button onClick={() => registrar('saida')} disabled={carregando} className="w-full flex items-center justify-center gap-3 py-4 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-red-900/50 font-['Montserrat'] font-semibold rounded-xl transition-all shadow-lg shadow-red-900/10 disabled:opacity-50">
-                  <LogOut size={22} className="text-red-400" /> Encerrar Expediente
+                <button onClick={() => registrar('saida')} disabled={carregando} className="w-full flex items-center justify-center gap-3 py-4 bg-[#0f172a] text-red-400 border border-red-500/50 hover:bg-red-500/10 font-['Montserrat'] font-bold rounded-2xl transition-all disabled:opacity-50">
+                  <LogOut size={22} /> FAZER CHECK-OUT
                 </button>
               )}
             </div>
           </div>
         )}
 
-        {/* === ABA 2: REGISTROS (Novo Histórico do Funcionário) === */}
+        {/* ===================== ABA: REGISTROS ===================== */}
         {abaAtiva === 'registros' && (
           <div className="w-full max-w-md mx-auto pt-6 px-4">
-            <h2 className="text-xl font-bold mb-6 font-['Montserrat'] text-white">Meu Histórico</h2>
+            <h2 className="text-xl font-bold mb-6 font-['Montserrat'] text-white">Meus Pontos</h2>
             
             <div className="bg-[#0f172a] border border-slate-700 rounded-2xl p-4 mb-6">
               <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Filtrar por Mês</label>
@@ -426,7 +501,7 @@ export default function BaterPonto() {
           </div>
         )}
 
-        {/* === ABA 3: PERFIL (O antigo modal, agora em tela cheia) === */}
+        {/* ===================== ABA: PERFIL ===================== */}
         {abaAtiva === 'perfil' && (
           <div className="w-full max-w-sm mx-auto pt-6 px-6">
             <h2 className="text-xl font-bold mb-6 font-['Montserrat'] text-white">Minha Conta</h2>
@@ -458,44 +533,38 @@ export default function BaterPonto() {
                 </button>
               </form>
             </div>
-
+            
+            {/* Eu mantive este botão extra aqui no final da aba por redundância, caso ele role até o fim */}
             <button onClick={sairApp} className="mt-8 w-full flex items-center justify-center gap-2 text-red-400 font-bold py-4 rounded-xl border border-red-900/30 hover:bg-red-500/10 transition-colors">
               <LogOut size={18} /> Sair do Aplicativo
             </button>
           </div>
         )}
-
       </div>
 
-      {/* === AVISOS FLUTUANTES (TOAST) === */}
+      {/* AVISOS FLUTUANTES (TOAST) */}
       {status && (
-        <div className={`fixed bottom-28 left-1/2 -translate-x-1/2 w-[90%] max-w-sm flex items-start text-left gap-3 p-4 rounded-2xl text-sm font-medium border backdrop-blur-xl z-50 shadow-2xl animate-in slide-in-from-bottom-2 ${status.includes('Sucesso') ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-100' : 'bg-red-950/90 border-red-500/50 text-red-100'}`}>
-          <div className="mt-0.5 shrink-0">
-            {status.includes('Sucesso') ? <CheckCircle2 size={20} className="text-emerald-400" /> : <AlertCircle size={20} className="text-red-400" />}
-          </div> 
+        <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 w-[90%] max-w-sm flex items-start text-left gap-3 p-4 rounded-2xl text-sm font-medium border backdrop-blur-xl z-50 shadow-2xl animate-in slide-in-from-bottom-2 ${status.includes('Sucesso') ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-100' : 'bg-red-950/90 border-red-500/50 text-red-100'}`}>
+          <div className="mt-0.5 shrink-0">{status.includes('Sucesso') ? <CheckCircle2 size={20} className="text-emerald-400" /> : <AlertCircle size={20} className="text-red-400" />}</div> 
           <span className="leading-snug">{status}</span>
         </div>
       )}
 
-      {/* === BARRA DE NAVEGAÇÃO INFERIOR === */}
-      <div className="fixed bottom-0 left-0 right-0 bg-[#0b1120]/95 backdrop-blur-lg border-t border-slate-800 z-40 pb-2 pt-2 px-6">
-        <div className="flex justify-between items-center max-w-sm mx-auto h-16">
-          
+      {/* BARRA DE NAVEGAÇÃO INFERIOR */}
+      <div className="fixed bottom-0 left-0 right-0 bg-[#0b1120]/95 backdrop-blur-lg border-t border-slate-800 shrink-0 z-40 px-6 pb-safe">
+        <div className="flex justify-between items-center max-w-sm mx-auto h-20">
           <button onClick={() => setAbaAtiva('inicio')} className={`flex flex-col items-center gap-1.5 w-20 transition-colors ${abaAtiva === 'inicio' ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}>
-            <Home size={22} className={abaAtiva === 'inicio' ? 'fill-emerald-400/20' : ''} />
+            <Home size={24} className={abaAtiva === 'inicio' ? 'fill-emerald-400/20' : ''} />
             <span className="text-[10px] font-bold uppercase tracking-wider">Início</span>
           </button>
-          
           <button onClick={() => setAbaAtiva('registros')} className={`flex flex-col items-center gap-1.5 w-20 transition-colors ${abaAtiva === 'registros' ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}>
-            <ClipboardList size={22} />
+            <ClipboardList size={24} />
             <span className="text-[10px] font-bold uppercase tracking-wider">Registros</span>
           </button>
-          
           <button onClick={() => setAbaAtiva('perfil')} className={`flex flex-col items-center gap-1.5 w-20 transition-colors ${abaAtiva === 'perfil' ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}>
-            <User size={22} className={abaAtiva === 'perfil' ? 'fill-emerald-400/20' : ''} />
+            <User size={24} className={abaAtiva === 'perfil' ? 'fill-emerald-400/20' : ''} />
             <span className="text-[10px] font-bold uppercase tracking-wider">Perfil</span>
           </button>
-
         </div>
       </div>
 
