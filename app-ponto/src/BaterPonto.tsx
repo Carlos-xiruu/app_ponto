@@ -32,7 +32,7 @@ export default function BaterPonto() {
   const [assinando, setAssinando] = useState(false);
   
   const [espelhoAssinatura, setEspelhoAssinatura] = useState(null);
-  const [concordoTermos, setConcordoTermos] = useState(false); // NOVO: Controle explícito do checkbox
+  const [concordoTermos, setConcordoTermos] = useState(false); 
 
   const videoConstraints = { width: 300, height: 400, facingMode: "user" };
 
@@ -68,7 +68,7 @@ export default function BaterPonto() {
     if (historico && historico.length > 0) {
       const ultimaAcao = historico[0];
       if (ultimaAcao.tipo_registro === 'entrada') {
-        setJornadaAtual({ status: 'trworking', pontoEntradaGps: ultimaAcao.localizacao_gps, bloqueadoPorHoje: false, obraNomeAtual: ultimaAcao.obra_nome });
+        setJornadaAtual({ status: 'trabalhando', pontoEntradaGps: ultimaAcao.localizacao_gps, bloqueadoPorHoje: false, obraNomeAtual: ultimaAcao.obra_nome });
         if (obrasData && ultimaAcao.obra_nome) {
           const obraMatch = obrasData.find(o => o.nome === ultimaAcao.obra_nome);
           if (obraMatch) setObraSelecionadaId(obraMatch.id);
@@ -112,12 +112,11 @@ export default function BaterPonto() {
     setCarregandoRegistros(false);
   };
 
-  // Melhorada a geração do espelho
   const abrirModalAssinatura = async (folha) => {
     setFolhaParaAssinar(folha);
     setModalAssinaturaAberto(true);
     setEspelhoAssinatura(null);
-    setConcordoTermos(false); // Reseta o checkbox ao abrir
+    setConcordoTermos(false); 
 
     const [ano, mes] = folha.mes_ano.split('-');
     const dataInicio = new Date(ano, mes - 1, 1).toISOString();
@@ -219,6 +218,20 @@ export default function BaterPonto() {
     if (jornadaAtual.bloqueadoPorHoje) { mostrarAviso('Jornada concluída! Novo registro liberado amanhã.'); return; }
     if (!obraSelecionadaId) { mostrarAviso('Erro: Selecione a Obra onde você está agora.'); return; }
 
+    const horaLocal = new Date().getHours();
+
+    // === TRAVA DE SEGURANÇA 1: Não entra depois das 8h ===
+    if (tipoRegistro === 'entrada' && horaLocal >= 8) {
+      mostrarAviso('Erro: Entrada bloqueada após as 08:00 da manhã. Fale com o Gestor.');
+      return;
+    }
+
+    // === TRAVA DE SEGURANÇA 2: Não sai antes das 8h ===
+    if (tipoRegistro === 'saida' && horaLocal < 8) {
+      mostrarAviso('Erro: A saída só pode ser registrada a partir das 08:00.');
+      return;
+    }
+
     setCarregando(true);
     setStatus('Autenticando GPS...'); 
 
@@ -284,6 +297,11 @@ export default function BaterPonto() {
     return obrasList.find(o => o.id === obraSelecionadaId)?.nome || 'Obra Desconhecida';
   };
 
+  // Variáveis para ajudar a renderização dos botões
+  const horaLocalNum = horaAtual.getHours();
+  const bloqueiaEntrada = jornadaAtual.status === 'trabalhando' || jornadaAtual.bloqueadoPorHoje || horaLocalNum >= 8;
+  const bloqueiaSaida = jornadaAtual.status === 'livre' || jornadaAtual.bloqueadoPorHoje || horaLocalNum < 8;
+
   return (
     <div className="h-screen bg-[#020617] font-['Inter'] text-slate-100 flex flex-col overflow-hidden relative">
       
@@ -315,7 +333,9 @@ export default function BaterPonto() {
         {abaAtiva === 'inicio' && (
           <div className="w-full max-w-sm mx-auto flex flex-col items-center pt-6 px-6">
             <div className="mb-6 text-center"><div className="font-['Montserrat'] text-5xl font-bold tracking-tight text-white drop-shadow-lg">{horaAtual.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}<span className="text-2xl text-slate-500 ml-1">{horaAtual.toLocaleTimeString('pt-BR', { second: '2-digit' })}</span></div></div>
+            
             <div className={`w-full p-4 rounded-2xl mb-6 flex items-center justify-center gap-3 border text-center shadow-lg ${jornadaAtual.bloqueadoPorHoje ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : jornadaAtual.status === 'trabalhando' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-800/50 border-slate-700 text-slate-400'}`}>{jornadaAtual.bloqueadoPorHoje ? ( <><Ban size={18} /><span className="text-sm font-semibold">Jornada Concluída.</span></> ) : jornadaAtual.status === 'trabalhando' ? ( <><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span><span className="text-sm font-semibold">Trabalhando na {jornadaAtual.obraNomeAtual || 'Base'}</span></> ) : ( <><CalendarClock size={18} /><span className="text-sm font-semibold">Aguardando início de turno.</span></> )}</div>
+            
             {!jornadaAtual.bloqueadoPorHoje && (
               <div className="w-full mb-6 relative z-30">
                 <button type="button" onClick={() => { if (jornadaAtual.status !== 'trabalhando') setDropdownAberto(!dropdownAberto); }} disabled={jornadaAtual.status === 'trabalhando'} className="w-full bg-[#0f172a] border border-blue-900/50 text-white text-sm font-semibold rounded-2xl py-4 px-4 flex justify-between items-center transition-colors shadow-lg disabled:opacity-70"><div className="flex items-center gap-3 truncate"><Building2 size={18} className="text-blue-400 shrink-0" /> <span className="truncate">{getNomeObraSelecionada()}</span></div><ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${dropdownAberto ? 'rotate-180' : ''}`} /></button>
@@ -330,6 +350,7 @@ export default function BaterPonto() {
                 )}
               </div>
             )}
+
             <div className="w-full bg-[#0f172a] border border-slate-800 rounded-3xl p-3 shadow-2xl mb-6 ring-1 ring-emerald-500/30">
               <div className="relative rounded-2xl overflow-hidden bg-black aspect-[3/4]">
                 <Webcam audio={false} ref={webcamRef} screenshotFormat="image/jpeg" videoConstraints={videoConstraints} className="w-full h-full object-cover" />
@@ -337,10 +358,51 @@ export default function BaterPonto() {
                 <div className="absolute bottom-4 left-0 right-0 flex justify-center"><div className="flex items-center gap-2 bg-black/70 backdrop-blur-md text-emerald-400 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider border border-emerald-500/30"><Camera size={14} /> Verificação Biométrica</div></div>
               </div>
             </div>
-            <div className="w-full flex flex-col gap-3">
-              {jornadaAtual.status === 'livre' && !jornadaAtual.bloqueadoPorHoje && ( <button onClick={() => registrar('entrada')} disabled={carregando} className="w-full flex items-center justify-center gap-3 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-['Montserrat'] font-bold rounded-2xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50"><LogIn size={22} /> FAZER CHECK-IN</button> )}
-              {jornadaAtual.status === 'trabalhando' && !jornadaAtual.bloqueadoPorHoje && ( <button onClick={() => registrar('saida')} disabled={carregando} className="w-full flex items-center justify-center gap-3 py-4 bg-[#0f172a] text-red-400 border border-red-500/50 hover:bg-red-500/10 font-['Montserrat'] font-bold rounded-2xl transition-all disabled:opacity-50"><LogOut size={22} /> FAZER CHECK-OUT</button> )}
+
+            {/* === NOVA ÁREA COM OS DOIS BOTÕES LADO A LADO === */}
+            <div className="w-full flex gap-3">
+              <button 
+                onClick={() => registrar('entrada')} 
+                disabled={bloqueiaEntrada || carregando} 
+                className={`flex-1 flex flex-col items-center justify-center gap-2 py-3 border ${
+                  bloqueiaEntrada 
+                  ? 'bg-slate-800/50 border-slate-700/50 text-slate-500' 
+                  : 'bg-emerald-600 border-emerald-500 text-white hover:bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                } font-['Montserrat'] font-bold rounded-2xl transition-all`}
+              >
+                <LogIn size={24} /> 
+                <span className="text-sm">ENTRADA</span>
+              </button>
+
+              <button 
+                onClick={() => registrar('saida')} 
+                disabled={bloqueiaSaida || carregando} 
+                className={`flex-1 flex flex-col items-center justify-center gap-2 py-3 border ${
+                  bloqueiaSaida
+                  ? 'bg-slate-800/50 border-slate-700/50 text-slate-500'
+                  : 'bg-[#0f172a] border-red-500/50 text-red-400 hover:bg-red-500/10 shadow-[0_0_15px_rgba(239,68,68,0.1)]'
+                } font-['Montserrat'] font-bold rounded-2xl transition-all`}
+              >
+                <LogOut size={24} /> 
+                <span className="text-sm">SAÍDA</span>
+              </button>
             </div>
+
+            {/* Mensagens Explicativas da Regra de Negócio */}
+            {horaLocalNum >= 8 && jornadaAtual.status === 'livre' && !jornadaAtual.bloqueadoPorHoje && (
+              <div className="w-full mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-center gap-2 text-amber-500">
+                <AlertCircle size={16} />
+                <span className="text-xs font-semibold text-center">Entrada bloqueada após as 08:00.<br/>Solicite lançamento ao gestor.</span>
+              </div>
+            )}
+            
+            {horaLocalNum < 8 && jornadaAtual.status === 'trabalhando' && (
+              <div className="w-full mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-center gap-2 text-amber-500">
+                <AlertCircle size={16} />
+                <span className="text-xs font-semibold text-center">A saída só será liberada após as 08:00.</span>
+              </div>
+            )}
+
           </div>
         )}
 
@@ -401,12 +463,10 @@ export default function BaterPonto() {
         </div>
       </div>
 
-      {/* === O NOVO MODAL DE ASSINATURA COM CONFERÊNCIA DE HORAS === */}
+      {/* === MODAL DE ASSINATURA === */}
       {modalAssinaturaAberto && folhaParaAssinar && (
         <div className="fixed inset-0 z-[999] flex flex-col bg-[#020617] p-0 sm:p-4">
           <div className="bg-[#0f172a] w-full h-full sm:h-auto sm:max-h-[90vh] sm:rounded-3xl shadow-2xl flex flex-col relative animate-in zoom-in-95">
-            
-            {/* Cabeçalho */}
             <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-[#0b1120] shrink-0 sm:rounded-t-3xl">
               <div className="flex items-center gap-3">
                 <ShieldCheck size={28} className="text-emerald-500" />
@@ -418,7 +478,6 @@ export default function BaterPonto() {
               <button onClick={() => setModalAssinaturaAberto(false)} disabled={assinando} className="text-slate-400 hover:text-white p-2 bg-slate-800 rounded-full transition-colors"><X size={20} /></button>
             </div>
             
-            {/* Corpo: O Espelho detalhado */}
             <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
               <p className="text-sm text-slate-300 mb-6 text-center">Confira seus registros abaixo. Ao assinar, você atesta a veracidade destes horários perante a Justiça do Trabalho.</p>
               
@@ -454,7 +513,6 @@ export default function BaterPonto() {
               )}
             </div>
 
-            {/* Rodapé Fixo: Aceite e Botão */}
             <div className="p-5 border-t border-slate-800 bg-[#0b1120] shrink-0 sm:rounded-b-3xl">
               <div 
                 className={`flex items-start gap-3 mb-4 p-3 rounded-lg border transition-colors cursor-pointer ${concordoTermos ? 'bg-emerald-900/20 border-emerald-500/50' : 'bg-slate-900/50 border-slate-800'}`}
@@ -477,11 +535,9 @@ export default function BaterPonto() {
                 {assinando ? 'Gerando Chaves...' : 'Assinar Espelho de Ponto'}
               </button>
             </div>
-
           </div>
         </div>
       )}
-
     </div>
   );
 }
