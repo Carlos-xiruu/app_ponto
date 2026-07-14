@@ -297,10 +297,15 @@ export default function BaterPonto() {
     return obrasList.find(o => o.id === obraSelecionadaId)?.nome || 'Obra Desconhecida';
   };
 
-  // Variáveis para ajudar a renderização dos botões
+  // === A MÁGICA DA LIBERAÇÃO VISUAL ESTÁ AQUI ===
   const horaLocalNum = horaAtual.getHours();
+  
+  // A entrada é bloqueada se ele já entrou (trabalhando), se já completou (bloqueadoPorHoje), ou se já passou das 07:59
   const bloqueiaEntrada = jornadaAtual.status === 'trabalhando' || jornadaAtual.bloqueadoPorHoje || horaLocalNum >= 8;
-  const bloqueiaSaida = jornadaAtual.status === 'livre' || jornadaAtual.bloqueadoPorHoje || horaLocalNum < 8;
+  
+  // A saída é bloqueada se ele já completou o dia, ou se for antes das 08:00
+  // Removi a dependência do status "livre", assim ele sempre pode bater a saída de tarde
+  const bloqueiaSaida = jornadaAtual.bloqueadoPorHoje || horaLocalNum < 8;
 
   return (
     <div className="h-screen bg-[#020617] font-['Inter'] text-slate-100 flex flex-col overflow-hidden relative">
@@ -359,7 +364,7 @@ export default function BaterPonto() {
               </div>
             </div>
 
-            {/* === NOVA ÁREA COM OS DOIS BOTÕES LADO A LADO === */}
+            {/* === ÁREA COM OS DOIS BOTÕES LADO A LADO === */}
             <div className="w-full flex gap-3">
               <button 
                 onClick={() => registrar('entrada')} 
@@ -392,7 +397,7 @@ export default function BaterPonto() {
             {horaLocalNum >= 8 && jornadaAtual.status === 'livre' && !jornadaAtual.bloqueadoPorHoje && (
               <div className="w-full mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-center gap-2 text-amber-500">
                 <AlertCircle size={16} />
-                <span className="text-xs font-semibold text-center">Entrada bloqueada após as 08:00.<br/>Solicite lançamento ao gestor.</span>
+                <span className="text-xs font-semibold text-center">Entrada não registrada no app.<br/>Registre apenas sua Saída no fim do dia.</span>
               </div>
             )}
             
