@@ -79,9 +79,9 @@ export default function Dashboard() {
     if (error) { console.error(error); setCarregando(false); return; }
 
     const agrupamento = {};
-    const totaisMinutosMes = {};
     let maiorDataEncontrada = null;
 
+    // === PASSO 1: Apenas organiza as batidas nos dias (sem calcular ainda) ===
     data.forEach((ponto) => {
       const dataObj = new Date(ponto.data_hora);
       const dataLocal = dataObj.toLocaleDateString('pt-BR');
@@ -93,24 +93,32 @@ export default function Dashboard() {
       if (!maiorDataEncontrada || dataObj > maiorDataEncontrada) { maiorDataEncontrada = dataObj; }
 
       if (!agrupamento[chave]) {
-        agrupamento[chave] = { nome: nomeFuncionario, cargo: cargoFuncionario, data: dataLocal, entrada: ponto.tipo_registro === 'entrada' ? { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome } : null, saida: ponto.tipo_registro === 'saida' ? { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome } : null, minutosTrabalhadosDia: 0 };
-      } else {
-        if (ponto.tipo_registro === 'entrada') agrupamento[chave].entrada = { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome };
-        if (ponto.tipo_registro === 'saida') agrupamento[chave].saida = { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome };
+        agrupamento[chave] = { nome: nomeFuncionario, cargo: cargoFuncionario, data: dataLocal, entrada: null, saida: null, minutosTrabalhadosDia: 0, descontouAlmoco: false };
       }
+      
+      if (ponto.tipo_registro === 'entrada') agrupamento[chave].entrada = { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome };
+      if (ponto.tipo_registro === 'saida') agrupamento[chave].saida = { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome };
+    });
 
-      if (agrupamento[chave].entrada && agrupamento[chave].saida) {
-        let minutos = Math.max(0, Math.floor((new Date(agrupamento[chave].saida.rawIso).getTime() - new Date(agrupamento[chave].entrada.rawIso).getTime()) / 60000));
+    const totaisMinutosMes = {};
+
+    // === PASSO 2: A matemática final e infalível, calculando o dia inteiro UMA ÚNICA VEZ ===
+    Object.values(agrupamento).forEach(dia => {
+      if (!totaisMinutosMes[dia.nome]) totaisMinutosMes[dia.nome] = 0;
+
+      if (dia.entrada && dia.saida) {
+        let minutos = Math.max(0, Math.floor((new Date(dia.saida.rawIso).getTime() - new Date(dia.entrada.rawIso).getTime()) / 60000));
         
-        // Desconto de 1 hora automático para jornadas completas
+        // Desconto de 1 hora automático
         if (minutos >= 60) {
           minutos -= 60;
+          dia.descontouAlmoco = true;
         } else {
           minutos = 0;
         }
 
-        agrupamento[chave].minutosTrabalhadosDia = minutos;
-        totaisMinutosMes[nomeFuncionario] = (totaisMinutosMes[nomeFuncionario] || 0) + minutos;
+        dia.minutosTrabalhadosDia = minutos;
+        totaisMinutosMes[dia.nome] += minutos;
       }
     });
 
@@ -179,7 +187,7 @@ export default function Dashboard() {
       .gte('data_hora', dataInicio)
       .lte('data_hora', dataFim);
 
-    // Lógica de substituição aprovada pelo usuário
+    // === ATUALIZADO: Remoção cirúrgica pelas IDs exatas ===
     if (registrosExistentes && registrosExistentes.length > 0) {
       const confirma = window.confirm(`⚠️ ATENÇÃO!\n\nJá existem batidas de ponto registradas para este colaborador na data informada.\n\nDeseja SUBSTITUIR todos os pontos deste dia pelos novos horários (Entrada: ${formManual.hora_entrada} e Saída: ${formManual.hora_saida})?`);
       
@@ -188,12 +196,18 @@ export default function Dashboard() {
         return;
       }
 
-      await supabase
+      const idsParaDeletar = registrosExistentes.map(r => r.id);
+      
+      const { error: deleteError } = await supabase
         .from('registros_ponto')
         .delete()
-        .eq('funcionario_id', formManual.funcionario_id)
-        .gte('data_hora', dataInicio)
-        .lte('data_hora', dataFim);
+        .in('id', idsParaDeletar);
+
+      if (deleteError) {
+        alert("Erro ao remover os pontos antigos: " + deleteError.message);
+        setCarregando(false);
+        return;
+      }
     }
 
     const dataIsoEntrada = new Date(`${formManual.data}T${formManual.hora_entrada}:00`).toISOString();
@@ -322,7 +336,7 @@ export default function Dashboard() {
                           <td className="p-4 text-[11px] text-blue-400 font-medium"><span className="flex items-center gap-1.5"><Building2 size={12}/> {l.entrada?.obra || l.saida?.obra || '-'}</span></td>
                           <td className="p-4 text-emerald-400 font-bold">{l.entrada ? l.entrada.hora : '-'}</td>
                           <td className="p-4 text-slate-300 font-bold">{l.saida ? l.saida.hora : '-'}</td>
-                          <td className="p-4 text-slate-400 text-xs">{l.saida ? '12:00 às 13:00' : '-'}</td>
+                          <td className="p-4 text-slate-400 text-xs">{l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa'}</td>
                           <td className="p-4 font-mono font-bold text-right text-blue-400">
                             {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
                           </td>
@@ -358,7 +372,7 @@ export default function Dashboard() {
               <form onSubmit={lancarPontoManual} className="flex flex-col gap-4">
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Colaborador</label>
-                  <select required onChange={e => setFormManual({...formManual, funcionario_id: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-emerald-500 outline-none">
+                  <select required value={formManual.funcionario_id} onChange={e => setFormManual({...formManual, funcionario_id: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-emerald-500 outline-none">
                     <option value="">Selecione...</option>
                     {funcionarios.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
                   </select>
@@ -367,11 +381,11 @@ export default function Dashboard() {
                 <div className="flex gap-4">
                   <div className="flex-1">
                     <label className="text-xs text-slate-400 mb-1 block">Data da Batida</label>
-                    <input type="date" required onChange={e => setFormManual({...formManual, data: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
+                    <input type="date" required value={formManual.data} onChange={e => setFormManual({...formManual, data: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
                   </div>
                   <div className="flex-1">
                     <label className="text-xs text-slate-400 mb-1 block">Obra / Local</label>
-                    <select required onChange={e => setFormManual({...formManual, obra_nome: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-emerald-500 outline-none">
+                    <select required value={formManual.obra_nome} onChange={e => setFormManual({...formManual, obra_nome: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-emerald-500 outline-none">
                       <option value="Lançamento Manual / Base">Manual / Base</option>
                       {obrasList.map(o => <option key={o.id} value={o.nome}>{o.nome}</option>)}
                     </select>
@@ -532,7 +546,7 @@ export default function Dashboard() {
                       <td className="p-5 text-slate-400 text-sm font-mono whitespace-nowrap">{linha.data}</td>
                       <td className="p-5">{linha.entrada ? ( <div className="flex items-start gap-3">{linha.entrada.foto && <img src={linha.entrada.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.entrada.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-emerald-400 text-base">{linha.entrada.hora}</span>{linha.entrada.gps && <BadgeLocalizacao gps={linha.entrada.gps} />}</div></div> ) : <span className="text-slate-700">-</span>}</td>
                       <td className="p-5">{linha.saida ? ( <div className="flex items-start gap-3">{linha.saida.foto && <img src={linha.saida.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.saida.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-slate-300 text-base">{linha.saida.hora}</span>{linha.saida.gps && <BadgeLocalizacao gps={linha.saida.gps} />}</div></div> ) : <span className="text-xs bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full font-medium">Em andamento</span>}</td>
-                      <td className="p-5 text-slate-400 text-xs">{linha.saida ? '12:00 às 13:00' : '-'}</td>
+                      <td className="p-5 text-slate-400 text-xs">{linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa'}</td>
                       <td className="p-5 text-right">
                         {linha.minutosTrabalhadosDia > 0 ? ( 
                           <span className="inline-flex items-center gap-1 bg-slate-900 text-blue-400 px-3 py-1.5 rounded-lg text-sm font-mono font-bold border border-slate-800">
@@ -595,7 +609,7 @@ export default function Dashboard() {
                     <td>{l.entrada?.obra || l.saida?.obra || '-'}</td>
                     <td>{l.entrada ? l.entrada.hora : '-'}</td>
                     <td>{l.saida ? l.saida.hora : '-'}</td>
-                    <td style={{ fontSize: '10px' }}>{l.saida ? '12:00 às 13:00' : '-'}</td>
+                    <td style={{ fontSize: '10px' }}>{l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '11px' }}>
                       {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
                     </td>
@@ -640,7 +654,7 @@ export default function Dashboard() {
                     <td style={{ whiteSpace: 'nowrap' }}>{linha.data}</td>
                     <td>{linha.entrada ? linha.entrada.hora : '-'}</td>
                     <td>{linha.saida ? linha.saida.hora : (linha.minutosTrabalhadosDia === 0 ? 'Em andamento' : '-')}</td>
-                    <td style={{ fontSize: '10px' }}>{linha.saida ? '12:00 às 13:00' : '-'}</td>
+                    <td style={{ fontSize: '10px' }}>{linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa'}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold' }}>
                       {linha.minutosTrabalhadosDia > 0 ? `${Math.floor(linha.minutosTrabalhadosDia / 60)}h ${(linha.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
                     </td>
