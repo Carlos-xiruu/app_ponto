@@ -5,6 +5,7 @@ import { supabase } from './supabaseClient';
 import { LogIn, LogOut, Camera, CheckCircle2, AlertCircle, User, Briefcase, CalendarClock, Save, Upload, Loader2, Ban, Building2, ChevronDown, Home, ClipboardList, MapPin, ShieldAlert, FileSignature, X, ShieldCheck } from 'lucide-react';
 
 export default function BaterPonto() {
+  // Meus controladores da câmera e estados principais
   const webcamRef = useRef<Webcam>(null);
   const [status, setStatus] = useState('');
   const [carregando, setCarregando] = useState(false);
@@ -12,6 +13,7 @@ export default function BaterPonto() {
 
   const [abaAtiva, setAbaAtiva] = useState('inicio'); 
 
+  // Aqui eu guardo os dados do peão logado
   const [perfil, setPerfil] = useState({ id: '', nome: '', funcao: '', avatar_url: '', cpf: '' });
   
   const [obrasList, setObrasList] = useState([]);
@@ -41,6 +43,7 @@ export default function BaterPonto() {
     setTimeout(() => setStatus(''), 6000);
   };
 
+  // Meu reloginho rodando em tempo real na tela principal
   useEffect(() => {
     const timer = setInterval(() => setHoraAtual(new Date()), 1000);
     carregarDadosDoFuncionario();
@@ -112,6 +115,7 @@ export default function BaterPonto() {
     setCarregandoRegistros(false);
   };
 
+  // Minha lógica para desenhar a tabela de horas que o funcionário vai assinar
   const abrirModalAssinatura = async (folha) => {
     setFolhaParaAssinar(folha);
     setModalAssinaturaAberto(true);
@@ -144,7 +148,7 @@ export default function BaterPonto() {
           const dtSai = new Date(dia.saida.raw);
           let mins = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
           
-          // === ATUALIZADO: O desconto de almoço automático sincronizado com o Gestor ===
+          // O mesmo desconto automático de 1h que implementei lá no painel do Gestor
           if (mins >= 60) {
             mins -= 60;
           } else {
@@ -163,6 +167,7 @@ export default function BaterPonto() {
     }
   };
 
+  // Minhas funções de segurança para bater o martelo na validade jurídica
   const gerarHashCriptografico = async (texto) => {
     const encoder = new TextEncoder();
     const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(texto));
@@ -212,18 +217,21 @@ export default function BaterPonto() {
     );
   };
 
+  // Minha fórmula matemática (Haversine) para o Geofence não deixar bater ponto fora da obra
   const calcularDistanciaEmMetros = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3; const rad = Math.PI / 180;
     const a = Math.sin((lat2 - lat1) * rad / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin((lon2 - lon1) * rad / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
+  // Onde o ponto realmente acontece
   const registrar = useCallback(async (tipoRegistro: 'entrada' | 'saida') => {
     if (jornadaAtual.bloqueadoPorHoje) { mostrarAviso('Jornada concluída! Novo registro liberado amanhã.'); return; }
     if (!obraSelecionadaId) { mostrarAviso('Erro: Selecione a Obra onde você está agora.'); return; }
 
     const horaLocal = new Date().getHours();
 
+    // Minhas travas de horário fixo da empresa
     if (tipoRegistro === 'entrada' && horaLocal >= 8) {
       mostrarAviso('Erro: Entrada bloqueada após as 08:00 da manhã. Fale com o Gestor.');
       return;
@@ -299,6 +307,7 @@ export default function BaterPonto() {
     return obrasList.find(o => o.id === obraSelecionadaId)?.nome || 'Obra Desconhecida';
   };
 
+  // Os bloqueadores que desativam os botões da tela
   const horaLocalNum = horaAtual.getHours();
   const bloqueiaEntrada = jornadaAtual.status === 'trabalhando' || jornadaAtual.bloqueadoPorHoje || horaLocalNum >= 8;
   const bloqueiaSaida = jornadaAtual.bloqueadoPorHoje || horaLocalNum < 8;
@@ -360,6 +369,7 @@ export default function BaterPonto() {
               </div>
             </div>
 
+            {/* A tela onde eu agrupei Entrada e Saída lada a lado */}
             <div className="w-full flex gap-3">
               <button 
                 onClick={() => registrar('entrada')} 

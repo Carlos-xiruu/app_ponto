@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 import { MapPin, Plus, X, FileText, Send, Share2, Eye, AlertTriangle, Building2, Trash2, Search, Navigation, Loader2, ArrowLeft, Clock, ShieldCheck, Fingerprint, FileSignature, Lock } from 'lucide-react';
 
+// Meu componente para renderizar o link do GPS transformado em endereço
 const BadgeLocalizacao = ({ gps }) => {
   const [endereco, setEndereco] = useState('Buscando...');
   useEffect(() => {
@@ -19,6 +20,7 @@ const BadgeLocalizacao = ({ gps }) => {
 };
 
 export default function Dashboard() {
+  // Meus estados para gerenciar os dados da tela
   const [pontosAgrupados, setPontosAgrupados] = useState([]);
   const [resumoMensal, setResumoMensal] = useState([]);
   const [funcionarios, setFuncionarios] = useState([]);
@@ -29,6 +31,7 @@ export default function Dashboard() {
   const [dataMinimaLog, setDataMinimaLog] = useState('');
   const [dataMaximaLog, setDataMaximaLog] = useState('');
   
+  // Meus controles de modais (telas por cima da principal)
   const [fotoExpandida, setFotoExpandida] = useState(null);
   const [modalAberto, setModalAberto] = useState(false); 
   const [modalObraAberto, setModalObraAberto] = useState(false); 
@@ -38,6 +41,7 @@ export default function Dashboard() {
   const [buscandoEndereco, setBuscandoEndereco] = useState(false);
   const [resultadosBusca, setResultadosBusca] = useState([]); 
   
+  // Meu estado para controlar o formulário turbinado de lançamento manual
   const [formManual, setFormManual] = useState({ 
     funcionario_id: '', 
     data: '', 
@@ -48,12 +52,15 @@ export default function Dashboard() {
   
   const [formObra, setFormObra] = useState({ nome: '', gps: '', buscaEndereco: '' });
 
+  // Pego o mês atual para ser o filtro padrão logo que abre a tela
   const dataAtual = new Date();
   const mesFiltroPadrao = `${dataAtual.getFullYear()}-${String(dataAtual.getMonth() + 1).padStart(2, '0')}`;
   const [mesFiltro, setMesFiltro] = useState(mesFiltroPadrao);
 
+  // Meu gatilho: sempre que o mês mudar, eu rodo a busca de dados de novo
   useEffect(() => { buscarDados(); }, [mesFiltro]);
 
+  // Minha engrenagem principal: busca tudo no Supabase e mastiga a matemática de horas
   const buscarDados = async () => {
     setCarregando(true);
     const { data: perfis } = await supabase.from('perfis').select('id, nome, funcao, cpf').eq('is_admin', false).order('nome');
@@ -81,7 +88,7 @@ export default function Dashboard() {
     const agrupamento = {};
     let maiorDataEncontrada = null;
 
-    // === PASSO 1: Apenas organiza as batidas nos dias (sem calcular ainda) ===
+    // Meu PASSO 1: Apenas organizo as batidas nos seus devidos dias
     data.forEach((ponto) => {
       const dataObj = new Date(ponto.data_hora);
       const dataLocal = dataObj.toLocaleDateString('pt-BR');
@@ -102,14 +109,14 @@ export default function Dashboard() {
 
     const totaisMinutosMes = {};
 
-    // === PASSO 2: A matemática final e infalível, calculando o dia inteiro UMA ÚNICA VEZ ===
+    // Meu PASSO 2: Aqui eu faço a matemática de descontos infalível, calculando o dia inteiro UMA ÚNICA VEZ
     Object.values(agrupamento).forEach(dia => {
       if (!totaisMinutosMes[dia.nome]) totaisMinutosMes[dia.nome] = 0;
 
       if (dia.entrada && dia.saida) {
         let minutos = Math.max(0, Math.floor((new Date(dia.saida.rawIso).getTime() - new Date(dia.entrada.rawIso).getTime()) / 60000));
         
-        // Desconto de 1 hora automático
+        // Meu desconto de 1 hora automático
         if (minutos >= 60) {
           minutos -= 60;
           dia.descontouAlmoco = true;
@@ -136,6 +143,7 @@ export default function Dashboard() {
     setCarregando(false);
   };
 
+  // Minha função de disparo em lote (manda a folha pra todos)
   const fecharFolhaDoMes = async () => {
     if(!window.confirm(`ATENÇÃO GESTOR:\nVocê está prestes a FECHAR a folha de ${mesFiltro} para TODOS os colaboradores.\nIsso enviará o espelho de ponto deste mês para todos assinarem digitalmente pelo aplicativo.\n\nTem certeza que os registros estão corretos?`)) return;
     setCarregando(true);
@@ -145,6 +153,7 @@ export default function Dashboard() {
     buscarDados();
   };
 
+  // Minha função cirúrgica (fecha a folha de um cara só que foi demitido ou algo assim)
   const fecharFolhaIndividual = async (funcionarioId, funcionarioNome) => {
     if(!window.confirm(`ATENÇÃO GESTOR:\nVocê está prestes a FECHAR a folha de ${mesFiltro} APENAS para o colaborador(a) ${funcionarioNome}.\n\nTem certeza que os registros deste funcionário estão corretos?`)) return;
     setCarregando(true);
@@ -173,6 +182,7 @@ export default function Dashboard() {
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(texto)}`, '_blank');
   };
 
+  // Minha lógica blindada para lançar manualmente sem duplicar horas
   const lancarPontoManual = async (e) => {
     e.preventDefault(); 
     setCarregando(true);
@@ -187,7 +197,7 @@ export default function Dashboard() {
       .gte('data_hora', dataInicio)
       .lte('data_hora', dataFim);
 
-    // === ATUALIZADO: Remoção cirúrgica pelas IDs exatas ===
+    // Se já tem registro, eu pergunto se ele quer exterminar os velhos para colocar os novos
     if (registrosExistentes && registrosExistentes.length > 0) {
       const confirma = window.confirm(`⚠️ ATENÇÃO!\n\nJá existem batidas de ponto registradas para este colaborador na data informada.\n\nDeseja SUBSTITUIR todos os pontos deste dia pelos novos horários (Entrada: ${formManual.hora_entrada} e Saída: ${formManual.hora_saida})?`);
       
@@ -230,6 +240,7 @@ export default function Dashboard() {
     setCarregando(false);
   };
 
+  // Minha integração com a API da Photon para achar a Latitude/Longitude pelo endereço
   const buscarCoordenadasPorEndereco = async () => {
     if (!formObra.buscaEndereco) return;
     setBuscandoEndereco(true);
@@ -259,6 +270,7 @@ export default function Dashboard() {
       
       <style>
         {`
+            /* Meu CSS de impressão blindado. A tabela de PDF ajustada fica aqui. */
             html, body { touch-action: pan-y; overscroll-behavior-y: none; -webkit-user-select: none; user-select: none; }
             input, select, textarea { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; }
 
@@ -289,6 +301,7 @@ export default function Dashboard() {
         `}
       </style>
 
+      {/* ÁREA DE MODAIS (Minhas sobreposições na tela) */}
       <div className="modais-extracao">
         {fotoExpandida && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"><div className="relative max-w-xl w-full flex flex-col items-center"><button onClick={() => setFotoExpandida(null)} className="absolute -top-12 right-0 p-3 bg-slate-800 hover:bg-slate-700 rounded-full text-white z-50"><X size={24} /></button><img src={fotoExpandida} alt="Auditoria" className="w-full h-auto max-h-[80vh] object-cover rounded-2xl border-4 border-slate-700" /></div></div>
@@ -324,8 +337,9 @@ export default function Dashboard() {
                         <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider whitespace-nowrap">Data</th>
                         <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Obra / Local</th>
                         <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Entrada</th>
-                        <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Saída</th>
+                        {/* Movi o intervalo para antes da saída, fluxo cronológico */}
                         <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Intervalo</th>
+                        <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Saída</th>
                         <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider text-right">Jornada</th>
                       </tr>
                     </thead>
@@ -335,8 +349,9 @@ export default function Dashboard() {
                           <td className="p-4 font-medium text-slate-200 whitespace-nowrap">{l.data}</td>
                           <td className="p-4 text-[11px] text-blue-400 font-medium"><span className="flex items-center gap-1.5"><Building2 size={12}/> {l.entrada?.obra || l.saida?.obra || '-'}</span></td>
                           <td className="p-4 text-emerald-400 font-bold">{l.entrada ? l.entrada.hora : '-'}</td>
+                          {/* Se ele bateu a saída, aparece o almoço. Se ainda está trabalhando, é um traço para ficar limpo */}
+                          <td className="p-4 text-slate-400 text-xs">{l.saida ? (l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
                           <td className="p-4 text-slate-300 font-bold">{l.saida ? l.saida.hora : '-'}</td>
-                          <td className="p-4 text-slate-400 text-xs">{l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa'}</td>
                           <td className="p-4 font-mono font-bold text-right text-blue-400">
                             {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
                           </td>
@@ -364,6 +379,7 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Meu modal de lançamento manual: agora lança as duas horas juntas! */}
         {modalAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
@@ -453,6 +469,7 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* === ÁREA PRINCIPAL DA TELA DO GESTOR === */}
       <div className="tela-interativa p-4 md:p-8 max-w-[1200px] mx-auto relative z-10">
         <div className="block">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-5">
@@ -468,6 +485,7 @@ export default function Dashboard() {
           <div className="mb-8">
             <div className="bg-[#0f172a] border border-slate-700 rounded-2xl p-5 md:w-1/3 shadow-xl mb-6"><label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3 block">Filtro de Competência (Mês/Ano)</label><input type="month" value={mesFiltro} onChange={(e) => setMesFiltro(e.target.value)} className="w-full bg-slate-900 border-2 border-slate-600 hover:border-slate-500 text-slate-100 font-semibold text-lg p-3.5 rounded-xl focus:border-emerald-500 outline-none transition-colors [color-scheme:dark]" /></div>
             
+            {/* Tabela de Fechamento por Funcionário */}
             <div className="bg-[#0f172a]/80 border border-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
               <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/50"><h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2"><ShieldCheck size={18} className="text-emerald-500" /> Controle de Folha e Assinaturas</h3></div>
               <div className="overflow-x-auto">
@@ -525,6 +543,7 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Tabela do Espelho Geral na Tela Inicial */}
           <div className="bg-[#0f172a]/60 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
             <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/30"><h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Espelho de Ponto Geral Diário</h3></div>
             <div className="overflow-x-auto">
@@ -534,8 +553,9 @@ export default function Dashboard() {
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Colaborador / Obra</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">Data</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Entrada</th>
-                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Saída</th>
+                    {/* Inseri a coluna de Intervalo no meio do fluxo cronológico */}
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Intervalo</th>
+                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Saída</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider text-right">Jornada Diária</th>
                   </tr>
                 </thead>
@@ -545,8 +565,8 @@ export default function Dashboard() {
                       <td className="p-5"><div className="font-medium text-slate-200 text-sm">{linha.nome}</div><div className="text-[10px] text-blue-400 font-medium flex items-center gap-1 mt-1"><Building2 size={10} /> {linha.entrada?.obra || linha.saida?.obra || 'Não especificada'}</div></td>
                       <td className="p-5 text-slate-400 text-sm font-mono whitespace-nowrap">{linha.data}</td>
                       <td className="p-5">{linha.entrada ? ( <div className="flex items-start gap-3">{linha.entrada.foto && <img src={linha.entrada.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.entrada.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-emerald-400 text-base">{linha.entrada.hora}</span>{linha.entrada.gps && <BadgeLocalizacao gps={linha.entrada.gps} />}</div></div> ) : <span className="text-slate-700">-</span>}</td>
+                      <td className="p-5 text-slate-400 text-xs">{linha.saida ? (linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
                       <td className="p-5">{linha.saida ? ( <div className="flex items-start gap-3">{linha.saida.foto && <img src={linha.saida.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.saida.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-slate-300 text-base">{linha.saida.hora}</span>{linha.saida.gps && <BadgeLocalizacao gps={linha.saida.gps} />}</div></div> ) : <span className="text-xs bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full font-medium">Em andamento</span>}</td>
-                      <td className="p-5 text-slate-400 text-xs">{linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa'}</td>
                       <td className="p-5 text-right">
                         {linha.minutosTrabalhadosDia > 0 ? ( 
                           <span className="inline-flex items-center gap-1 bg-slate-900 text-blue-400 px-3 py-1.5 rounded-lg text-sm font-mono font-bold border border-slate-800">
@@ -563,6 +583,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* === MEUS LAYOUTS DE IMPRESSÃO (PDF) === */}
       <div className="hidden print:block area-impressao font-sans text-black">
         {certificadoSelecionado ? (
           <div className="certificado-container">
@@ -595,11 +616,11 @@ export default function Dashboard() {
               <thead>
                 <tr>
                   <th style={{ width: '12%', whiteSpace: 'nowrap' }}>Data</th>
-                  <th style={{ width: '33%' }}>Obra Local</th>
+                  <th style={{ width: '30%' }}>Obra Local</th>
                   <th style={{ width: '12%' }}>Entrada</th>
+                  <th style={{ width: '18%' }}>Intervalo</th>
                   <th style={{ width: '12%' }}>Saída</th>
-                  <th style={{ width: '16%' }}>Intervalo</th>
-                  <th style={{ width: '15%', textAlign: 'right' }}>Total Diário</th>
+                  <th style={{ width: '16%', textAlign: 'right' }}>Total Diário</th>
                 </tr>
               </thead>
               <tbody>
@@ -608,8 +629,8 @@ export default function Dashboard() {
                     <td style={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>{l.data}</td>
                     <td>{l.entrada?.obra || l.saida?.obra || '-'}</td>
                     <td>{l.entrada ? l.entrada.hora : '-'}</td>
+                    <td style={{ fontSize: '10px' }}>{l.saida ? (l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
                     <td>{l.saida ? l.saida.hora : '-'}</td>
-                    <td style={{ fontSize: '10px' }}>{l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '11px' }}>
                       {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
                     </td>
@@ -642,8 +663,8 @@ export default function Dashboard() {
                   <th style={{ width: '22%' }}>Colaborador / Obra</th>
                   <th style={{ width: '12%', whiteSpace: 'nowrap' }}>Data</th>
                   <th style={{ width: '12%' }}>Entrada</th>
-                  <th style={{ width: '12%' }}>Saída</th>
                   <th style={{ width: '22%' }}>Intervalo</th>
+                  <th style={{ width: '12%' }}>Saída</th>
                   <th style={{ width: '20%', textAlign: 'right' }}>Total Dia</th>
                 </tr>
               </thead>
@@ -653,8 +674,8 @@ export default function Dashboard() {
                     <td style={{ fontWeight: 'bold' }}>{linha.nome}<div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: 'normal' }}>{linha.entrada?.obra || linha.saida?.obra || ''}</div></td>
                     <td style={{ whiteSpace: 'nowrap' }}>{linha.data}</td>
                     <td>{linha.entrada ? linha.entrada.hora : '-'}</td>
+                    <td style={{ fontSize: '10px' }}>{linha.saida ? (linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
                     <td>{linha.saida ? linha.saida.hora : (linha.minutosTrabalhadosDia === 0 ? 'Em andamento' : '-')}</td>
-                    <td style={{ fontSize: '10px' }}>{linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa'}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold' }}>
                       {linha.minutosTrabalhadosDia > 0 ? `${Math.floor(linha.minutosTrabalhadosDia / 60)}h ${(linha.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
                     </td>
