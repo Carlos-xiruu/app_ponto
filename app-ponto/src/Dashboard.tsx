@@ -38,7 +38,14 @@ export default function Dashboard() {
   const [buscandoEndereco, setBuscandoEndereco] = useState(false);
   const [resultadosBusca, setResultadosBusca] = useState([]); 
   
-  const [formManual, setFormManual] = useState({ funcionario_id: '', data: '', hora: '', tipo_registro: 'entrada', obra_nome: 'Lançamento Manual / Base' });
+  const [formManual, setFormManual] = useState({ 
+    funcionario_id: '', 
+    data: '', 
+    hora_entrada: '07:00', 
+    hora_saida: '17:00', 
+    obra_nome: 'Lançamento Manual / Base' 
+  });
+  
   const [formObra, setFormObra] = useState({ nome: '', gps: '', buscaEndereco: '' });
 
   const dataAtual = new Date();
@@ -86,7 +93,7 @@ export default function Dashboard() {
       if (!maiorDataEncontrada || dataObj > maiorDataEncontrada) { maiorDataEncontrada = dataObj; }
 
       if (!agrupamento[chave]) {
-        agrupamento[chave] = { nome: nomeFuncionario, cargo: cargoFuncionario, data: dataLocal, entrada: ponto.tipo_registro === 'entrada' ? { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome } : null, saida: ponto.tipo_registro === 'saida' ? { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome } : null, minutosTrabalhadosDia: 0, descontouAlmoco: false };
+        agrupamento[chave] = { nome: nomeFuncionario, cargo: cargoFuncionario, data: dataLocal, entrada: ponto.tipo_registro === 'entrada' ? { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome } : null, saida: ponto.tipo_registro === 'saida' ? { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome } : null, minutosTrabalhadosDia: 0 };
       } else {
         if (ponto.tipo_registro === 'entrada') agrupamento[chave].entrada = { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome };
         if (ponto.tipo_registro === 'saida') agrupamento[chave].saida = { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome };
@@ -94,9 +101,14 @@ export default function Dashboard() {
 
       if (agrupamento[chave].entrada && agrupamento[chave].saida) {
         let minutos = Math.max(0, Math.floor((new Date(agrupamento[chave].saida.rawIso).getTime() - new Date(agrupamento[chave].entrada.rawIso).getTime()) / 60000));
-        const hE = new Date(agrupamento[chave].entrada.rawIso).getHours() + (new Date(agrupamento[chave].entrada.rawIso).getMinutes() / 60);
-        const hS = new Date(agrupamento[chave].saida.rawIso).getHours() + (new Date(agrupamento[chave].saida.rawIso).getMinutes() / 60);
-        if (hE <= 12 && hS >= 13) { minutos -= 60; agrupamento[chave].descontouAlmoco = true; }
+        
+        // Desconto de 1 hora automático para jornadas completas
+        if (minutos >= 60) {
+          minutos -= 60;
+        } else {
+          minutos = 0;
+        }
+
         agrupamento[chave].minutosTrabalhadosDia = minutos;
         totaisMinutosMes[nomeFuncionario] = (totaisMinutosMes[nomeFuncionario] || 0) + minutos;
       }
@@ -125,7 +137,6 @@ export default function Dashboard() {
     buscarDados();
   };
 
-  // === NOVO: FECHAMENTO INDIVIDUAL DE FOLHA ===
   const fecharFolhaIndividual = async (funcionarioId, funcionarioNome) => {
     if(!window.confirm(`ATENÇÃO GESTOR:\nVocê está prestes a FECHAR a folha de ${mesFiltro} APENAS para o colaborador(a) ${funcionarioNome}.\n\nTem certeza que os registros deste funcionário estão corretos?`)) return;
     setCarregando(true);
@@ -155,9 +166,54 @@ export default function Dashboard() {
   };
 
   const lancarPontoManual = async (e) => {
-    e.preventDefault(); setCarregando(true);
-    const { error } = await supabase.from('registros_ponto').insert({ funcionario_id: formManual.funcionario_id, tipo_registro: formManual.tipo_registro, data_hora: new Date(`${formManual.data}T${formManual.hora}:00`).toISOString(), obra_nome: formManual.obra_nome });
-    if (!error) { setModalAberto(false); buscarDados(); } else alert("Erro ao lançar.");
+    e.preventDefault(); 
+    setCarregando(true);
+
+    const dataInicio = new Date(`${formManual.data}T00:00:00`).toISOString();
+    const dataFim = new Date(`${formManual.data}T23:59:59`).toISOString();
+
+    const { data: registrosExistentes } = await supabase
+      .from('registros_ponto')
+      .select('id')
+      .eq('funcionario_id', formManual.funcionario_id)
+      .gte('data_hora', dataInicio)
+      .lte('data_hora', dataFim);
+
+    // Lógica de substituição aprovada pelo usuário
+    if (registrosExistentes && registrosExistentes.length > 0) {
+      const confirma = window.confirm(`⚠️ ATENÇÃO!\n\nJá existem batidas de ponto registradas para este colaborador na data informada.\n\nDeseja SUBSTITUIR todos os pontos deste dia pelos novos horários (Entrada: ${formManual.hora_entrada} e Saída: ${formManual.hora_saida})?`);
+      
+      if (!confirma) {
+        setCarregando(false);
+        return;
+      }
+
+      await supabase
+        .from('registros_ponto')
+        .delete()
+        .eq('funcionario_id', formManual.funcionario_id)
+        .gte('data_hora', dataInicio)
+        .lte('data_hora', dataFim);
+    }
+
+    const dataIsoEntrada = new Date(`${formManual.data}T${formManual.hora_entrada}:00`).toISOString();
+    const dataIsoSaida = new Date(`${formManual.data}T${formManual.hora_saida}:00`).toISOString();
+
+    const batidasMassa = [
+      { funcionario_id: formManual.funcionario_id, tipo_registro: 'entrada', data_hora: dataIsoEntrada, obra_nome: formManual.obra_nome },
+      { funcionario_id: formManual.funcionario_id, tipo_registro: 'saida', data_hora: dataIsoSaida, obra_nome: formManual.obra_nome }
+    ];
+
+    const { error } = await supabase.from('registros_ponto').insert(batidasMassa);
+
+    if (!error) { 
+      setModalAberto(false);
+      setFormManual({ funcionario_id: '', data: '', hora_entrada: '07:00', hora_saida: '17:00', obra_nome: 'Lançamento Manual / Base' });
+      buscarDados(); 
+    } else { 
+      alert("Erro ao lançar pontos."); 
+    }
+    setCarregando(false);
   };
 
   const buscarCoordenadasPorEndereco = async () => {
@@ -198,11 +254,14 @@ export default function Dashboard() {
               * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-shadow: none !important; color: black !important; }
               header, .tela-interativa, .modais-extracao { display: none !important; }
               .area-impressao { display: block !important; position: relative !important; width: 100% !important; background: white !important; padding: 10mm !important; box-sizing: border-box !important; }
+              
               .pdf-table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; table-layout: fixed !important; }
               .pdf-table th { border: 1px solid #cbd5e1 !important; padding: 6px 8px !important; font-size: 9px !important; background-color: #f1f5f9 !important; text-transform: uppercase !important; font-weight: bold !important; text-align: left !important; }
               .pdf-table td { border: 1px solid #cbd5e1 !important; padding: 6px 8px !important; font-size: 10px !important; word-wrap: break-word !important; }
+              
               thead { display: table-header-group !important; }
               tr { page-break-inside: avoid !important; page-break-after: auto !important; }
+              
               .pdf-title { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 16px !important; margin: 0 0 5px 0 !important; text-transform: uppercase !important; border-bottom: 2px solid #cbd5e1 !important; padding-bottom: 8px !important; }
               .pdf-subtitle { font-size: 10px !important; color: #475569 !important; margin: 6px 0 15px 0 !important; }
               .pdf-section { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 11px !important; border-bottom: 1px solid #cbd5e1 !important; padding-bottom: 4px !important; margin-top: 20px !important; margin-bottom: 8px !important; text-transform: uppercase !important; }
@@ -230,7 +289,7 @@ export default function Dashboard() {
                 <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800"><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Assinado por</span><div className="flex justify-between items-center"><span className="text-lg font-bold text-slate-200">{certificadoSelecionado.nomeFuncionario}</span><span className="font-mono text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded border border-emerald-500/20">CPF: {certificadoSelecionado.cpfFuncionario}</span></div></div>
                 <div className="grid grid-cols-2 gap-4"><div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800"><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Competência (Folha)</span><span className="font-bold text-slate-200">{certificadoSelecionado.folha.mes_ano.split('-')[1]}/{certificadoSelecionado.folha.mes_ano.split('-')[0]}</span></div><div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800"><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Data/Hora da Assinatura</span><span className="font-bold text-slate-200">{new Date(certificadoSelecionado.folha.data_assinatura).toLocaleString('pt-BR')}</span></div></div>
                 <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 space-y-2"><div><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-0.5">Rastreabilidade de Rede (IP)</span><span className="font-mono text-xs text-blue-400">{certificadoSelecionado.folha.ip_assinatura || 'Não registrado'}</span></div><div><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-0.5 mt-2">Coordenada GPS no momento do aceite</span><span className="font-mono text-xs text-blue-400">{certificadoSelecionado.folha.gps_assinatura || 'Não registrado'}</span></div></div>
-                <div className="bg-[#020617] p-4 rounded-xl border border-slate-700"><span className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1 flex items-center gap-1.5"><Lock size={12}/> Hash Criptográfico (Imutabilidade)</span><span className="font-mono text-[10px] text-slate-300 break-all">{certificadoSelecionado.folha.hash_auditoria}</span></div>
+                <div className="bg-[#020617] p-4 rounded-xl border border-slate-700"><span className="block text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1 flex items-center gap-1.5"><Lock size={12}/> Hash Criptográfico (Imutabilidade)</span><span className="font-mono text-[10px] text-slate-300 break-all">{certificadoSelecionado.folha.hash_auditoria}</span></div>
               </div>
               <div className="flex gap-4"><button onClick={() => setCertificadoSelecionado(null)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 rounded-xl transition-colors">Voltar</button><button onClick={() => window.print()} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-blue-900/20 flex justify-center items-center gap-2"><FileText size={18}/> Imprimir Laudo</button></div>
             </div>
@@ -242,13 +301,32 @@ export default function Dashboard() {
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-3xl p-6 md:p-8 shadow-2xl relative max-h-[95vh] overflow-y-auto custom-scrollbar">
               <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4"><h2 className="text-xl md:text-2xl font-bold font-['Montserrat'] text-white">Demonstrativo Individual</h2><button onClick={() => setExtratoSelecionado(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-3 rounded-xl hover:bg-slate-800 transition-colors z-50"><X size={24} /></button></div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 bg-slate-900/50 p-5 rounded-2xl border border-slate-800 mt-2"><div><span className="block text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Colaborador</span><span className="font-bold text-slate-200 text-lg">{extratoSelecionado.nome}</span></div><div><span className="block text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Função / Cargo</span><span className="font-bold text-slate-200 text-lg">{extratoSelecionado.cargo}</span></div></div>
+              
               <div className="border border-slate-800 rounded-2xl overflow-hidden mb-6 shadow-lg">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm border-collapse min-w-[600px]">
-                    <thead><tr className="bg-slate-900/80 border-b border-slate-800"><th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Data</th><th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Obra / Local</th><th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Entrada</th><th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Saída</th><th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider text-right">Jornada</th></tr></thead>
+                    <thead>
+                      <tr className="bg-slate-900/80 border-b border-slate-800">
+                        <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider whitespace-nowrap">Data</th>
+                        <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Obra / Local</th>
+                        <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Entrada</th>
+                        <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Saída</th>
+                        <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Intervalo</th>
+                        <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider text-right">Jornada</th>
+                      </tr>
+                    </thead>
                     <tbody className="divide-y divide-slate-800/50">
                       {extratoSelecionado.logs.map((l, i) => (
-                        <tr key={i} className="hover:bg-slate-800/30 transition-colors"><td className="p-4 font-medium text-slate-200">{l.data}</td><td className="p-4 text-[11px] text-blue-400 font-medium"><span className="flex items-center gap-1.5"><Building2 size={12}/> {l.entrada?.obra || l.saida?.obra || '-'}</span></td><td className="p-4 text-emerald-400 font-bold">{l.entrada ? l.entrada.hora : '-'}</td><td className="p-4 text-slate-300 font-bold">{l.saida ? l.saida.hora : '-'}</td><td className="p-4 font-mono font-bold text-right text-blue-400"><div className="flex flex-col items-end"><span>{l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}</span>{l.descontouAlmoco && <span className="text-[9px] text-slate-500 font-sans mt-0.5">(-1h Almoço)</span>}</div></td></tr>
+                        <tr key={i} className="hover:bg-slate-800/30 transition-colors">
+                          <td className="p-4 font-medium text-slate-200 whitespace-nowrap">{l.data}</td>
+                          <td className="p-4 text-[11px] text-blue-400 font-medium"><span className="flex items-center gap-1.5"><Building2 size={12}/> {l.entrada?.obra || l.saida?.obra || '-'}</span></td>
+                          <td className="p-4 text-emerald-400 font-bold">{l.entrada ? l.entrada.hora : '-'}</td>
+                          <td className="p-4 text-slate-300 font-bold">{l.saida ? l.saida.hora : '-'}</td>
+                          <td className="p-4 text-slate-400 text-xs">{l.saida ? '12:00 às 13:00' : '-'}</td>
+                          <td className="p-4 font-mono font-bold text-right text-blue-400">
+                            {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
+                          </td>
+                        </tr>
                       ))}
                     </tbody>
                   </table>
@@ -285,15 +363,35 @@ export default function Dashboard() {
                     {funcionarios.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
                   </select>
                 </div>
+                
                 <div className="flex gap-4">
-                  <div className="flex-1"><label className="text-xs text-slate-400 mb-1 block">Data</label><input type="date" required onChange={e => setFormManual({...formManual, data: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" /></div>
-                  <div className="flex-1"><label className="text-xs text-slate-400 mb-1 block">Hora</label><input type="time" required onChange={e => setFormManual({...formManual, hora: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" /></div>
+                  <div className="flex-1">
+                    <label className="text-xs text-slate-400 mb-1 block">Data da Batida</label>
+                    <input type="date" required onChange={e => setFormManual({...formManual, data: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs text-slate-400 mb-1 block">Obra / Local</label>
+                    <select required onChange={e => setFormManual({...formManual, obra_nome: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-emerald-500 outline-none">
+                      <option value="Lançamento Manual / Base">Manual / Base</option>
+                      {obrasList.map(o => <option key={o.id} value={o.nome}>{o.nome}</option>)}
+                    </select>
+                  </div>
                 </div>
-                <div className="flex gap-4">
-                  <div className="flex-1"><label className="text-xs text-slate-400 mb-1 block">Tipo de Batida</label><select required onChange={e => setFormManual({...formManual, tipo_registro: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-emerald-500 outline-none"><option value="entrada">Entrada</option><option value="saida">Saída</option></select></div>
-                  <div className="flex-1"><label className="text-xs text-slate-400 mb-1 block">Obra / Local</label><select required onChange={e => setFormManual({...formManual, obra_nome: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-emerald-500 outline-none"><option value="Lançamento Manual / Base">Manual / Base</option>{obrasList.map(o => <option key={o.id} value={o.nome}>{o.nome}</option>)}</select></div>
+
+                <div className="flex gap-4 mt-2">
+                  <div className="flex-1">
+                    <label className="text-xs text-slate-400 mb-1 block">Hora da Entrada</label>
+                    <input type="time" required value={formManual.hora_entrada} onChange={e => setFormManual({...formManual, hora_entrada: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs text-slate-400 mb-1 block">Hora da Saída</label>
+                    <input type="time" required value={formManual.hora_saida} onChange={e => setFormManual({...formManual, hora_saida: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
+                  </div>
                 </div>
-                <button type="submit" disabled={carregando} className="mt-4 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition-colors">Confirmar Lançamento</button>
+
+                <button type="submit" disabled={carregando} className="mt-4 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition-colors">
+                  {carregando ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'Registrar Dia Completo'}
+                </button>
               </form>
             </div>
           </div>
@@ -384,7 +482,6 @@ export default function Dashboard() {
                             <td className="p-4 text-right">
                               
                               <div className="flex justify-end gap-2">
-                                {/* NOVO: Botão Fechar Individual (só aparece se não tem folhaDB) */}
                                 {!folhaDB && resumo && (
                                   <button onClick={() => fecharFolhaIndividual(func.id, func.nome)} title="Fechar Folha Individualmente" className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors flex items-center gap-2">
                                     <Lock size={14} /> Fechar
@@ -418,15 +515,31 @@ export default function Dashboard() {
             <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/30"><h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Espelho de Ponto Geral Diário</h3></div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[800px]">
-                <thead><tr className="bg-slate-900/70 border-b border-slate-800"><th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Colaborador / Obra</th><th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Data</th><th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Entrada</th><th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Saída</th><th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Jornada Diária</th></tr></thead>
+                <thead>
+                  <tr className="bg-slate-900/70 border-b border-slate-800">
+                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Colaborador / Obra</th>
+                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">Data</th>
+                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Entrada</th>
+                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Saída</th>
+                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Intervalo</th>
+                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider text-right">Jornada Diária</th>
+                  </tr>
+                </thead>
                 <tbody className="divide-y divide-slate-800/40">
                   {pontosAgrupados.map((linha, index) => (
                     <tr key={index} className="hover:bg-slate-800/30 transition-colors">
                       <td className="p-5"><div className="font-medium text-slate-200 text-sm">{linha.nome}</div><div className="text-[10px] text-blue-400 font-medium flex items-center gap-1 mt-1"><Building2 size={10} /> {linha.entrada?.obra || linha.saida?.obra || 'Não especificada'}</div></td>
-                      <td className="p-5 text-slate-400 text-sm font-mono">{linha.data}</td>
+                      <td className="p-5 text-slate-400 text-sm font-mono whitespace-nowrap">{linha.data}</td>
                       <td className="p-5">{linha.entrada ? ( <div className="flex items-start gap-3">{linha.entrada.foto && <img src={linha.entrada.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.entrada.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-emerald-400 text-base">{linha.entrada.hora}</span>{linha.entrada.gps && <BadgeLocalizacao gps={linha.entrada.gps} />}</div></div> ) : <span className="text-slate-700">-</span>}</td>
                       <td className="p-5">{linha.saida ? ( <div className="flex items-start gap-3">{linha.saida.foto && <img src={linha.saida.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.saida.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-slate-300 text-base">{linha.saida.hora}</span>{linha.saida.gps && <BadgeLocalizacao gps={linha.saida.gps} />}</div></div> ) : <span className="text-xs bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full font-medium">Em andamento</span>}</td>
-                      <td className="p-5">{linha.minutosTrabalhadosDia > 0 ? ( <div className="flex flex-col items-start gap-1"><span className="inline-flex items-center gap-1 bg-slate-900 text-blue-400 px-3 py-1.5 rounded-lg text-sm font-mono font-bold border border-slate-800">{Math.floor(linha.minutosTrabalhadosDia / 60)}h {(linha.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m</span>{linha.descontouAlmoco && <span className="text-[10px] text-slate-500 ml-1">(-1h Almoço)</span>}</div> ) : <span className="text-slate-600">-</span>}</td>
+                      <td className="p-5 text-slate-400 text-xs">{linha.saida ? '12:00 às 13:00' : '-'}</td>
+                      <td className="p-5 text-right">
+                        {linha.minutosTrabalhadosDia > 0 ? ( 
+                          <span className="inline-flex items-center gap-1 bg-slate-900 text-blue-400 px-3 py-1.5 rounded-lg text-sm font-mono font-bold border border-slate-800">
+                            {Math.floor(linha.minutosTrabalhadosDia / 60)}h {(linha.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m
+                          </span> 
+                        ) : <span className="text-slate-600">-</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -465,8 +578,30 @@ export default function Dashboard() {
             <table className="pdf-table" style={{ marginTop: '5px', marginBottom: '20px' }}><thead><tr><th style={{ width: '50%' }}>Colaborador</th><th style={{ width: '50%' }}>Função / Cargo</th></tr></thead><tbody><tr><td style={{ fontWeight: 'bold', fontSize: '12px' }}>{extratoSelecionado.nome}</td><td style={{ fontWeight: 'bold', fontSize: '12px' }}>{extratoSelecionado.cargo}</td></tr></tbody></table>
             <div className="pdf-section">2. Espelho de Ponto Detalhado</div>
             <table className="pdf-table" style={{ marginTop: '5px' }}>
-              <thead><tr><th style={{ width: '15%' }}>Data</th><th style={{ width: '35%' }}>Obra Local</th><th style={{ width: '15%' }}>Entrada</th><th style={{ width: '15%' }}>Saída</th><th style={{ width: '20%', textAlign: 'right' }}>Total Diário</th></tr></thead>
-              <tbody>{extratoSelecionado.logs.map((l, i) => ( <tr key={i}><td style={{ fontWeight: 'bold' }}>{l.data}</td><td>{l.entrada?.obra || l.saida?.obra || '-'}</td><td>{l.entrada ? l.entrada.hora : '-'}</td><td>{l.saida ? l.saida.hora : '-'}</td><td style={{ textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '11px' }}>{l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}{l.descontouAlmoco ? ' (Desc.)' : ''}</td></tr> ))}</tbody>
+              <thead>
+                <tr>
+                  <th style={{ width: '12%', whiteSpace: 'nowrap' }}>Data</th>
+                  <th style={{ width: '33%' }}>Obra Local</th>
+                  <th style={{ width: '12%' }}>Entrada</th>
+                  <th style={{ width: '12%' }}>Saída</th>
+                  <th style={{ width: '16%' }}>Intervalo</th>
+                  <th style={{ width: '15%', textAlign: 'right' }}>Total Diário</th>
+                </tr>
+              </thead>
+              <tbody>
+                {extratoSelecionado.logs.map((l, i) => ( 
+                  <tr key={i}>
+                    <td style={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>{l.data}</td>
+                    <td>{l.entrada?.obra || l.saida?.obra || '-'}</td>
+                    <td>{l.entrada ? l.entrada.hora : '-'}</td>
+                    <td>{l.saida ? l.saida.hora : '-'}</td>
+                    <td style={{ fontSize: '10px' }}>{l.saida ? '12:00 às 13:00' : '-'}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '11px' }}>
+                      {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
+                    </td>
+                  </tr> 
+                ))}
+              </tbody>
             </table>
             <div className="pdf-box"><span style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '11px' }}>Saldo Acumulado:</span><span style={{ fontSize: '14px', fontWeight: 'bold', fontFamily: 'monospace' }}>{extratoSelecionado.horasFormatadas}</span></div>
             
@@ -487,7 +622,32 @@ export default function Dashboard() {
             <div className="pdf-section">1. Resumo Consolidado de Horas (Banco Mensal)</div>
             <table className="pdf-table" style={{ marginTop: '5px', marginBottom: '20px' }}><thead><tr><th style={{ width: '50%' }}>Nome do Colaborador</th><th style={{ width: '30%' }}>Função Registrada</th><th style={{ width: '20%', textAlign: 'right' }}>Carga Horária Total</th></tr></thead><tbody>{resumoMensal.map((r, i) => ( <tr key={i}><td style={{ fontWeight: 'bold' }}>{r.nome}</td><td>{r.cargo}</td><td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '12px' }}>{r.horasFormatadas}</td></tr> ))}</tbody></table>
             <div className="pdf-section">2. Espelho de Ponto Detalhado Geral</div>
-            <table className="pdf-table" style={{ marginTop: '5px' }}><thead><tr><th style={{ width: '25%' }}>Colaborador / Obra</th><th style={{ width: '15%' }}>Data</th><th style={{ width: '15%' }}>Entrada</th><th style={{ width: '25%' }}>Saída</th><th style={{ width: '20%', textAlign: 'right' }}>Total Dia</th></tr></thead><tbody>{pontosAgrupados.map((linha, index) => ( <tr key={index}><td style={{ fontWeight: 'bold' }}>{linha.nome}<div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: 'normal' }}>{linha.entrada?.obra || linha.saida?.obra || ''}</div></td><td>{linha.data}</td><td>{linha.entrada ? linha.entrada.hora : '-'}</td><td>{linha.saida ? linha.saida.hora : (linha.minutosTrabalhadosDia === 0 ? 'Em andamento' : '-')}</td><td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold' }}>{linha.minutosTrabalhadosDia > 0 ? `${Math.floor(linha.minutosTrabalhadosDia / 60)}h ${(linha.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}{linha.descontouAlmoco ? ' (Desc.)' : ''}</td></tr> ))}</tbody></table>
+            <table className="pdf-table" style={{ marginTop: '5px' }}>
+              <thead>
+                <tr>
+                  <th style={{ width: '22%' }}>Colaborador / Obra</th>
+                  <th style={{ width: '12%', whiteSpace: 'nowrap' }}>Data</th>
+                  <th style={{ width: '12%' }}>Entrada</th>
+                  <th style={{ width: '12%' }}>Saída</th>
+                  <th style={{ width: '22%' }}>Intervalo</th>
+                  <th style={{ width: '20%', textAlign: 'right' }}>Total Dia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pontosAgrupados.map((linha, index) => ( 
+                  <tr key={index}>
+                    <td style={{ fontWeight: 'bold' }}>{linha.nome}<div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: 'normal' }}>{linha.entrada?.obra || linha.saida?.obra || ''}</div></td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{linha.data}</td>
+                    <td>{linha.entrada ? linha.entrada.hora : '-'}</td>
+                    <td>{linha.saida ? linha.saida.hora : (linha.minutosTrabalhadosDia === 0 ? 'Em andamento' : '-')}</td>
+                    <td style={{ fontSize: '10px' }}>{linha.saida ? '12:00 às 13:00' : '-'}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                      {linha.minutosTrabalhadosDia > 0 ? `${Math.floor(linha.minutosTrabalhadosDia / 60)}h ${(linha.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
+                    </td>
+                  </tr> 
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

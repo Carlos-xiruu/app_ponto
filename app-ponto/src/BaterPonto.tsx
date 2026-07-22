@@ -143,9 +143,13 @@ export default function BaterPonto() {
           const dtEnt = new Date(dia.entrada.raw);
           const dtSai = new Date(dia.saida.raw);
           let mins = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
-          const hE = dtEnt.getHours() + dtEnt.getMinutes()/60;
-          const hS = dtSai.getHours() + dtSai.getMinutes()/60;
-          if (hE <= 12 && hS >= 13) mins -= 60; 
+          
+          // === ATUALIZADO: O desconto de almoço automático sincronizado com o Gestor ===
+          if (mins >= 60) {
+            mins -= 60;
+          } else {
+            mins = 0;
+          }
           
           dia.totalDia = mins;
           totalMinutosMes += mins;
@@ -220,13 +224,11 @@ export default function BaterPonto() {
 
     const horaLocal = new Date().getHours();
 
-    // === TRAVA DE SEGURANÇA 1: Não entra depois das 8h ===
     if (tipoRegistro === 'entrada' && horaLocal >= 8) {
       mostrarAviso('Erro: Entrada bloqueada após as 08:00 da manhã. Fale com o Gestor.');
       return;
     }
 
-    // === TRAVA DE SEGURANÇA 2: Não sai antes das 8h ===
     if (tipoRegistro === 'saida' && horaLocal < 8) {
       mostrarAviso('Erro: A saída só pode ser registrada a partir das 08:00.');
       return;
@@ -297,14 +299,8 @@ export default function BaterPonto() {
     return obrasList.find(o => o.id === obraSelecionadaId)?.nome || 'Obra Desconhecida';
   };
 
-  // === A MÁGICA DA LIBERAÇÃO VISUAL ESTÁ AQUI ===
   const horaLocalNum = horaAtual.getHours();
-  
-  // A entrada é bloqueada se ele já entrou (trabalhando), se já completou (bloqueadoPorHoje), ou se já passou das 07:59
   const bloqueiaEntrada = jornadaAtual.status === 'trabalhando' || jornadaAtual.bloqueadoPorHoje || horaLocalNum >= 8;
-  
-  // A saída é bloqueada se ele já completou o dia, ou se for antes das 08:00
-  // Removi a dependência do status "livre", assim ele sempre pode bater a saída de tarde
   const bloqueiaSaida = jornadaAtual.bloqueadoPorHoje || horaLocalNum < 8;
 
   return (
@@ -364,7 +360,6 @@ export default function BaterPonto() {
               </div>
             </div>
 
-            {/* === ÁREA COM OS DOIS BOTÕES LADO A LADO === */}
             <div className="w-full flex gap-3">
               <button 
                 onClick={() => registrar('entrada')} 
@@ -393,7 +388,6 @@ export default function BaterPonto() {
               </button>
             </div>
 
-            {/* Mensagens Explicativas da Regra de Negócio */}
             {horaLocalNum >= 8 && jornadaAtual.status === 'livre' && !jornadaAtual.bloqueadoPorHoje && (
               <div className="w-full mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-center gap-2 text-amber-500">
                 <AlertCircle size={16} />
