@@ -54,6 +54,7 @@ export default function BaterPonto() {
     if (abaAtiva === 'registros') buscarHistoricoMensal();
   }, [abaAtiva, mesFiltro, perfil.id]);
 
+  // Função que puxa quem é o cara que está com o celular na mão
   const carregarDadosDoFuncionario = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -115,7 +116,7 @@ export default function BaterPonto() {
     setCarregandoRegistros(false);
   };
 
-  // Minha lógica para desenhar a tabela de horas que o funcionário vai assinar
+  // Minha lógica para desenhar a tabela de horas que o funcionário vai assinar no celular
   const abrirModalAssinatura = async (folha) => {
     setFolhaParaAssinar(folha);
     setModalAssinaturaAberto(true);
@@ -307,7 +308,7 @@ export default function BaterPonto() {
     return obrasList.find(o => o.id === obraSelecionadaId)?.nome || 'Obra Desconhecida';
   };
 
-  // Os bloqueadores que desativam os botões da tela
+  // Os bloqueadores que desativam os botões da tela inicial
   const horaLocalNum = horaAtual.getHours();
   const bloqueiaEntrada = jornadaAtual.status === 'trabalhando' || jornadaAtual.bloqueadoPorHoje || horaLocalNum >= 8;
   const bloqueiaSaida = jornadaAtual.bloqueadoPorHoje || horaLocalNum < 8;
@@ -472,7 +473,7 @@ export default function BaterPonto() {
         </div>
       </div>
 
-      {/* === MODAL DE ASSINATURA === */}
+      {/* === MODAL DE ASSINATURA NA TELA DO PEÃO === */}
       {modalAssinaturaAberto && folhaParaAssinar && (
         <div className="fixed inset-0 z-[999] flex flex-col bg-[#020617] p-0 sm:p-4">
           <div className="bg-[#0f172a] w-full h-full sm:h-auto sm:max-h-[90vh] sm:rounded-3xl shadow-2xl flex flex-col relative animate-in zoom-in-95">
@@ -487,7 +488,7 @@ export default function BaterPonto() {
               <button onClick={() => setModalAssinaturaAberto(false)} disabled={assinando} className="text-slate-400 hover:text-white p-2 bg-slate-800 rounded-full transition-colors"><X size={20} /></button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 custom-scrollbar">
               <p className="text-sm text-slate-300 mb-6 text-center">Confira seus registros abaixo. Ao assinar, você atesta a veracidade destes horários perante a Justiça do Trabalho.</p>
               
               {!espelhoAssinatura ? (
@@ -499,21 +500,22 @@ export default function BaterPonto() {
                     <span className="text-4xl font-black text-emerald-500 font-mono">{espelhoAssinatura.horasFormatadas}</span>
                   </div>
 
+                  {/* Minha listagem de dias ajustada para caber legal em qualquer celular */}
                   <div className="space-y-3 mb-6">
                     {espelhoAssinatura.dias.map((dia, i) => (
                       <div key={i} className="bg-slate-900/50 border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
-                        <div className="flex justify-between items-center">
-                           <span className="font-bold text-slate-200 text-sm w-16">{dia.data.substring(0,5)}</span>
-                           <div className="flex-1 flex justify-center gap-4 text-sm font-mono text-slate-400">
+                        <div className="flex justify-between items-center gap-1 sm:gap-3">
+                           <span className="font-bold text-slate-200 text-xs sm:text-sm w-12 sm:w-16 shrink-0">{dia.data.substring(0,5)}</span>
+                           <div className="flex-1 flex justify-center gap-2 sm:gap-4 text-xs sm:text-sm font-mono text-slate-400 truncate">
                              <span className="text-emerald-400">{dia.entrada?.hora || '--:--'}</span>
                              <span>às</span>
                              <span className="text-slate-300">{dia.saida?.hora || '--:--'}</span>
                            </div>
-                           <span className="font-mono font-bold text-blue-400 text-xs w-16 text-right">
+                           <span className="font-mono font-bold text-blue-400 text-xs w-14 sm:w-16 text-right shrink-0">
                              {dia.totalDia > 0 ? `${Math.floor(dia.totalDia/60)}h${(dia.totalDia%60).toString().padStart(2,'0')}` : '-'}
                            </span>
                         </div>
-                        <div className="text-[9px] text-slate-500 text-center uppercase tracking-wider"><MapPin size={8} className="inline mr-1" />{dia.obra}</div>
+                        <div className="text-[9px] text-slate-500 text-center uppercase tracking-wider truncate"><MapPin size={8} className="inline mr-1" />{dia.obra}</div>
                       </div>
                     ))}
                     {espelhoAssinatura.dias.length === 0 && <div className="text-center text-slate-500 py-4">Nenhum ponto batido neste mês.</div>}

@@ -270,28 +270,33 @@ export default function Dashboard() {
       
       <style>
         {`
-            /* Meu CSS de impressão blindado. A tabela de PDF ajustada fica aqui. */
+            /* Meu CSS blindado para a tela e impressão */
             html, body { touch-action: pan-y; overscroll-behavior-y: none; -webkit-user-select: none; user-select: none; }
             input, select, textarea { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; }
 
+            /* AQUI ESTÁ A MÁGICA DA CORREÇÃO DO PDF:
+               1. Alterei as duas tabelas para A4 Landscape (Paisagem) para sobrar espaço.
+               2. Retirei o 'table-layout: fixed', agora o HTML calcula a largura exata de cada palavra!
+               3. Ajustei os paddings para deixar as colunas respirarem.
+            */
             @media print {
-              @page { size: ${extratoSelecionado ? 'A4 portrait' : certificadoSelecionado ? 'A4 portrait' : 'A4 landscape'}; margin: 10mm; }
+              @page { size: ${certificadoSelecionado ? 'A4 portrait' : 'A4 landscape'}; margin: 10mm; }
               html, body, #root, main, .min-h-screen { background: white !important; color: black !important; display: block !important; width: 100% !important; margin: 0 !important; padding: 0 !important; box-sizing: border-box !important; }
-              * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-shadow: none !important; color: black !important; }
+              * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-shadow: none !important; color: black !important; box-sizing: border-box !important; }
               header, .tela-interativa, .modais-extracao { display: none !important; }
               .area-impressao { display: block !important; position: relative !important; width: 100% !important; background: white !important; padding: 10mm !important; box-sizing: border-box !important; }
               
-              .pdf-table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; table-layout: fixed !important; }
-              .pdf-table th { border: 1px solid #cbd5e1 !important; padding: 6px 8px !important; font-size: 9px !important; background-color: #f1f5f9 !important; text-transform: uppercase !important; font-weight: bold !important; text-align: left !important; }
-              .pdf-table td { border: 1px solid #cbd5e1 !important; padding: 6px 8px !important; font-size: 10px !important; word-wrap: break-word !important; }
+              .pdf-table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; }
+              .pdf-table th { border: 1px solid #cbd5e1 !important; padding: 8px 10px !important; font-size: 10px !important; background-color: #f1f5f9 !important; text-transform: uppercase !important; font-weight: bold !important; text-align: left !important; }
+              .pdf-table td { border: 1px solid #cbd5e1 !important; padding: 8px 10px !important; font-size: 11px !important; vertical-align: middle !important; }
               
               thead { display: table-header-group !important; }
               tr { page-break-inside: avoid !important; page-break-after: auto !important; }
               
-              .pdf-title { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 16px !important; margin: 0 0 5px 0 !important; text-transform: uppercase !important; border-bottom: 2px solid #cbd5e1 !important; padding-bottom: 8px !important; }
-              .pdf-subtitle { font-size: 10px !important; color: #475569 !important; margin: 6px 0 15px 0 !important; }
-              .pdf-section { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 11px !important; border-bottom: 1px solid #cbd5e1 !important; padding-bottom: 4px !important; margin-top: 20px !important; margin-bottom: 8px !important; text-transform: uppercase !important; }
-              .pdf-box { border: 1px solid #cbd5e1 !important; padding: 10px !important; margin-top: 15px !important; display: flex !important; justify-content: space-between !important; background-color: #f8fafc !important; }
+              .pdf-title { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 18px !important; margin: 0 0 5px 0 !important; text-transform: uppercase !important; border-bottom: 2px solid #cbd5e1 !important; padding-bottom: 8px !important; }
+              .pdf-subtitle { font-size: 11px !important; color: #475569 !important; margin: 6px 0 15px 0 !important; }
+              .pdf-section { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 12px !important; border-bottom: 1px solid #cbd5e1 !important; padding-bottom: 4px !important; margin-top: 20px !important; margin-bottom: 8px !important; text-transform: uppercase !important; }
+              .pdf-box { border: 1px solid #cbd5e1 !important; padding: 12px !important; margin-top: 15px !important; display: flex !important; justify-content: space-between !important; background-color: #f8fafc !important; }
 
               .certificado-container { border: 4px double #1e293b !important; padding: 40px !important; border-radius: 10px !important; }
               .certificado-header { text-align: center !important; margin-bottom: 30px !important; }
@@ -331,13 +336,13 @@ export default function Dashboard() {
               
               <div className="border border-slate-800 rounded-2xl overflow-hidden mb-6 shadow-lg">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm border-collapse min-w-[600px]">
+                  {/* Aumentei o min-width da tabela de tela para as colunas respirarem */}
+                  <table className="w-full text-left text-sm border-collapse min-w-[750px]">
                     <thead>
                       <tr className="bg-slate-900/80 border-b border-slate-800">
                         <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider whitespace-nowrap">Data</th>
                         <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Obra / Local</th>
                         <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Entrada</th>
-                        {/* Movi o intervalo para antes da saída, fluxo cronológico */}
                         <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Intervalo</th>
                         <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider">Saída</th>
                         <th className="p-4 text-slate-400 font-semibold uppercase text-xs tracking-wider text-right">Jornada</th>
@@ -349,8 +354,7 @@ export default function Dashboard() {
                           <td className="p-4 font-medium text-slate-200 whitespace-nowrap">{l.data}</td>
                           <td className="p-4 text-[11px] text-blue-400 font-medium"><span className="flex items-center gap-1.5"><Building2 size={12}/> {l.entrada?.obra || l.saida?.obra || '-'}</span></td>
                           <td className="p-4 text-emerald-400 font-bold">{l.entrada ? l.entrada.hora : '-'}</td>
-                          {/* Se ele bateu a saída, aparece o almoço. Se ainda está trabalhando, é um traço para ficar limpo */}
-                          <td className="p-4 text-slate-400 text-xs">{l.saida ? (l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
+                          <td className="p-4 text-slate-400 text-xs whitespace-nowrap">{l.saida ? (l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
                           <td className="p-4 text-slate-300 font-bold">{l.saida ? l.saida.hora : '-'}</td>
                           <td className="p-4 font-mono font-bold text-right text-blue-400">
                             {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
@@ -547,13 +551,12 @@ export default function Dashboard() {
           <div className="bg-[#0f172a]/60 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
             <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/30"><h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Espelho de Ponto Geral Diário</h3></div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[800px]">
+              <table className="w-full text-left border-collapse min-w-[900px]">
                 <thead>
                   <tr className="bg-slate-900/70 border-b border-slate-800">
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Colaborador / Obra</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">Data</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Entrada</th>
-                    {/* Inseri a coluna de Intervalo no meio do fluxo cronológico */}
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Intervalo</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Saída</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider text-right">Jornada Diária</th>
@@ -565,7 +568,7 @@ export default function Dashboard() {
                       <td className="p-5"><div className="font-medium text-slate-200 text-sm">{linha.nome}</div><div className="text-[10px] text-blue-400 font-medium flex items-center gap-1 mt-1"><Building2 size={10} /> {linha.entrada?.obra || linha.saida?.obra || 'Não especificada'}</div></td>
                       <td className="p-5 text-slate-400 text-sm font-mono whitespace-nowrap">{linha.data}</td>
                       <td className="p-5">{linha.entrada ? ( <div className="flex items-start gap-3">{linha.entrada.foto && <img src={linha.entrada.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.entrada.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-emerald-400 text-base">{linha.entrada.hora}</span>{linha.entrada.gps && <BadgeLocalizacao gps={linha.entrada.gps} />}</div></div> ) : <span className="text-slate-700">-</span>}</td>
-                      <td className="p-5 text-slate-400 text-xs">{linha.saida ? (linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
+                      <td className="p-5 text-slate-400 text-xs whitespace-nowrap">{linha.saida ? (linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
                       <td className="p-5">{linha.saida ? ( <div className="flex items-start gap-3">{linha.saida.foto && <img src={linha.saida.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.saida.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-slate-300 text-base">{linha.saida.hora}</span>{linha.saida.gps && <BadgeLocalizacao gps={linha.saida.gps} />}</div></div> ) : <span className="text-xs bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full font-medium">Em andamento</span>}</td>
                       <td className="p-5 text-right">
                         {linha.minutosTrabalhadosDia > 0 ? ( 
@@ -584,6 +587,7 @@ export default function Dashboard() {
       </div>
 
       {/* === MEUS LAYOUTS DE IMPRESSÃO (PDF) === */}
+      {/* Aqui as tabelas não têm mais porcentagens fixas, então o HTML se encarrega de esticar  */}
       <div className="hidden print:block area-impressao font-sans text-black">
         {certificadoSelecionado ? (
           <div className="certificado-container">
@@ -615,12 +619,12 @@ export default function Dashboard() {
             <table className="pdf-table" style={{ marginTop: '5px' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '12%', whiteSpace: 'nowrap' }}>Data</th>
-                  <th style={{ width: '30%' }}>Obra Local</th>
-                  <th style={{ width: '12%' }}>Entrada</th>
-                  <th style={{ width: '18%' }}>Intervalo</th>
-                  <th style={{ width: '12%' }}>Saída</th>
-                  <th style={{ width: '16%', textAlign: 'right' }}>Total Diário</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Data</th>
+                  <th>Obra Local</th>
+                  <th>Entrada</th>
+                  <th>Intervalo</th>
+                  <th>Saída</th>
+                  <th style={{ textAlign: 'right' }}>Total Diário</th>
                 </tr>
               </thead>
               <tbody>
@@ -629,9 +633,9 @@ export default function Dashboard() {
                     <td style={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>{l.data}</td>
                     <td>{l.entrada?.obra || l.saida?.obra || '-'}</td>
                     <td>{l.entrada ? l.entrada.hora : '-'}</td>
-                    <td style={{ fontSize: '10px' }}>{l.saida ? (l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{l.saida ? (l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
                     <td>{l.saida ? l.saida.hora : '-'}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '11px' }}>
+                    <td style={{ textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace' }}>
                       {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
                     </td>
                   </tr> 
@@ -660,12 +664,12 @@ export default function Dashboard() {
             <table className="pdf-table" style={{ marginTop: '5px' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '22%' }}>Colaborador / Obra</th>
-                  <th style={{ width: '12%', whiteSpace: 'nowrap' }}>Data</th>
-                  <th style={{ width: '12%' }}>Entrada</th>
-                  <th style={{ width: '22%' }}>Intervalo</th>
-                  <th style={{ width: '12%' }}>Saída</th>
-                  <th style={{ width: '20%', textAlign: 'right' }}>Total Dia</th>
+                  <th>Colaborador / Obra</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Data</th>
+                  <th>Entrada</th>
+                  <th>Intervalo</th>
+                  <th>Saída</th>
+                  <th style={{ textAlign: 'right' }}>Total Dia</th>
                 </tr>
               </thead>
               <tbody>
@@ -674,7 +678,7 @@ export default function Dashboard() {
                     <td style={{ fontWeight: 'bold' }}>{linha.nome}<div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: 'normal' }}>{linha.entrada?.obra || linha.saida?.obra || ''}</div></td>
                     <td style={{ whiteSpace: 'nowrap' }}>{linha.data}</td>
                     <td>{linha.entrada ? linha.entrada.hora : '-'}</td>
-                    <td style={{ fontSize: '10px' }}>{linha.saida ? (linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{linha.saida ? (linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
                     <td>{linha.saida ? linha.saida.hora : (linha.minutosTrabalhadosDia === 0 ? 'Em andamento' : '-')}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold' }}>
                       {linha.minutosTrabalhadosDia > 0 ? `${Math.floor(linha.minutosTrabalhadosDia / 60)}h ${(linha.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
