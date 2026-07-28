@@ -138,18 +138,26 @@ export default function BaterPonto() {
         const dataLocal = dataObj.toLocaleDateString('pt-BR');
         const horaLocal = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-        if (!dias[dataLocal]) dias[dataLocal] = { data: dataLocal, entrada: null, saida: null, totalDia: 0, obra: ponto.obra_nome || 'Base' };
+        if (!dias[dataLocal]) dias[dataLocal] = { data: dataLocal, entrada: null, saida: null, totalDia: 0, obra: ponto.obra_nome || 'Base', isEspecial: false };
+        
+        // Pega se for Folga, Férias ou Viagem pra tratar diferente no modal de assinar
+        if (['FOLGA', 'FÉRIAS', 'VIAGEM'].includes(ponto.obra_nome)) {
+          dias[dataLocal].isEspecial = ponto.obra_nome;
+        }
+
         if (ponto.tipo_registro === 'entrada') dias[dataLocal].entrada = { hora: horaLocal, raw: ponto.data_hora };
         if (ponto.tipo_registro === 'saida') dias[dataLocal].saida = { hora: horaLocal, raw: ponto.data_hora };
       });
 
       Object.values(dias).forEach(dia => {
-        if (dia.entrada && dia.saida) {
+        if (dia.isEspecial) {
+          dia.totalDia = 0;
+        } else if (dia.entrada && dia.saida) {
           const dtEnt = new Date(dia.entrada.raw);
           const dtSai = new Date(dia.saida.raw);
           let mins = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
           
-          // O mesmo desconto automático de 1h que implementei lá no painel do Gestor
+          // O mesmo desconto automático de 1h
           if (mins >= 60) {
             mins -= 60;
           } else {
@@ -500,22 +508,35 @@ export default function BaterPonto() {
                     <span className="text-4xl font-black text-emerald-500 font-mono">{espelhoAssinatura.horasFormatadas}</span>
                   </div>
 
-                  {/* Minha listagem de dias ajustada para caber legal em qualquer celular */}
+                  {/* Minha listagem de dias ajustada para caber legal em qualquer celular e mostrar Folgas */}
                   <div className="space-y-3 mb-6">
                     {espelhoAssinatura.dias.map((dia, i) => (
                       <div key={i} className="bg-slate-900/50 border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
                         <div className="flex justify-between items-center gap-1 sm:gap-3">
                            <span className="font-bold text-slate-200 text-xs sm:text-sm w-12 sm:w-16 shrink-0">{dia.data.substring(0,5)}</span>
-                           <div className="flex-1 flex justify-center gap-2 sm:gap-4 text-xs sm:text-sm font-mono text-slate-400 truncate">
-                             <span className="text-emerald-400">{dia.entrada?.hora || '--:--'}</span>
-                             <span>às</span>
-                             <span className="text-slate-300">{dia.saida?.hora || '--:--'}</span>
-                           </div>
-                           <span className="font-mono font-bold text-blue-400 text-xs w-14 sm:w-16 text-right shrink-0">
-                             {dia.totalDia > 0 ? `${Math.floor(dia.totalDia/60)}h${(dia.totalDia%60).toString().padStart(2,'0')}` : '-'}
-                           </span>
+                           
+                           {/* Aqui entra minha mágica se o dia for Férias/Folga */}
+                           {dia.isEspecial ? (
+                             <>
+                               <div className="flex-1 flex justify-center text-xs sm:text-sm font-bold text-amber-400 tracking-wider">
+                                 {dia.isEspecial}
+                               </div>
+                               <span className="font-mono text-slate-600 text-xs w-14 sm:w-16 text-right shrink-0">-</span>
+                             </>
+                           ) : (
+                             <>
+                               <div className="flex-1 flex justify-center gap-2 sm:gap-4 text-xs sm:text-sm font-mono text-slate-400 truncate">
+                                 <span className="text-emerald-400">{dia.entrada?.hora || '--:--'}</span>
+                                 <span>às</span>
+                                 <span className="text-slate-300">{dia.saida?.hora || '--:--'}</span>
+                               </div>
+                               <span className="font-mono font-bold text-blue-400 text-xs w-14 sm:w-16 text-right shrink-0">
+                                 {dia.totalDia > 0 ? `${Math.floor(dia.totalDia/60)}h${(dia.totalDia%60).toString().padStart(2,'0')}` : '-'}
+                               </span>
+                             </>
+                           )}
                         </div>
-                        <div className="text-[9px] text-slate-500 text-center uppercase tracking-wider truncate"><MapPin size={8} className="inline mr-1" />{dia.obra}</div>
+                        {!dia.isEspecial && <div className="text-[9px] text-slate-500 text-center uppercase tracking-wider truncate"><MapPin size={8} className="inline mr-1" />{dia.obra}</div>}
                       </div>
                     ))}
                     {espelhoAssinatura.dias.length === 0 && <div className="text-center text-slate-500 py-4">Nenhum ponto batido neste mês.</div>}

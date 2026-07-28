@@ -41,10 +41,12 @@ export default function Dashboard() {
   const [buscandoEndereco, setBuscandoEndereco] = useState(false);
   const [resultadosBusca, setResultadosBusca] = useState([]); 
   
-  // Meu estado para controlar o formulário turbinado de lançamento manual
+  //  Meu formulário turbinado para aceitar Períodos de Datas, Folgas e Férias 
   const [formManual, setFormManual] = useState({ 
     funcionario_id: '', 
-    data: '', 
+    tipo_lancamento: 'normal', // normal, folga, ferias, viagem
+    data_inicio: '', 
+    data_fim: '', 
     hora_entrada: '07:00', 
     hora_saida: '17:00', 
     obra_nome: 'Lançamento Manual / Base' 
@@ -88,7 +90,7 @@ export default function Dashboard() {
     const agrupamento = {};
     let maiorDataEncontrada = null;
 
-    // Meu PASSO 1: Apenas organizo as batidas nos seus devidos dias
+    // Meu PASSO 1: Apenas organizo as batidas nos seus devidos dias e descubro se é Folga/Férias
     data.forEach((ponto) => {
       const dataObj = new Date(ponto.data_hora);
       const dataLocal = dataObj.toLocaleDateString('pt-BR');
@@ -100,23 +102,33 @@ export default function Dashboard() {
       if (!maiorDataEncontrada || dataObj > maiorDataEncontrada) { maiorDataEncontrada = dataObj; }
 
       if (!agrupamento[chave]) {
-        agrupamento[chave] = { nome: nomeFuncionario, cargo: cargoFuncionario, data: dataLocal, entrada: null, saida: null, minutosTrabalhadosDia: 0, descontouAlmoco: false };
+        agrupamento[chave] = { nome: nomeFuncionario, cargo: cargoFuncionario, data: dataLocal, entrada: null, saida: null, minutosTrabalhadosDia: 0, descontouAlmoco: false, isEspecial: false };
       }
       
+      // Checo se o lançamento foi de Folga, Férias ou Viagem
+      if (['FOLGA', 'FÉRIAS', 'VIAGEM'].includes(ponto.obra_nome)) {
+        agrupamento[chave].isEspecial = ponto.obra_nome;
+      }
+
       if (ponto.tipo_registro === 'entrada') agrupamento[chave].entrada = { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome };
       if (ponto.tipo_registro === 'saida') agrupamento[chave].saida = { hora: horaLocal, gps: ponto.localizacao_gps, foto: ponto.foto_url, rawIso: ponto.data_hora, obra: ponto.obra_nome };
     });
 
     const totaisMinutosMes = {};
 
-    // Meu PASSO 2: Aqui eu faço a matemática de descontos infalível, calculando o dia inteiro UMA ÚNICA VEZ
+    // Meu PASSO 2: Aqui eu faço a matemática de descontos infalível
     Object.values(agrupamento).forEach(dia => {
       if (!totaisMinutosMes[dia.nome]) totaisMinutosMes[dia.nome] = 0;
 
-      if (dia.entrada && dia.saida) {
+      // Se for um dia de folga/férias, ele não ganha nem perde horas (fica zero).
+      if (dia.isEspecial) {
+        dia.minutosTrabalhadosDia = 0;
+      } 
+      // Se for um dia normal de trabalho, aplica a regra de horas
+      else if (dia.entrada && dia.saida) {
         let minutos = Math.max(0, Math.floor((new Date(dia.saida.rawIso).getTime() - new Date(dia.entrada.rawIso).getTime()) / 60000));
         
-        // Meu desconto de 1 hora automático
+        // Meu desconto de 1 hora automático de almoço
         if (minutos >= 60) {
           minutos -= 60;
           dia.descontouAlmoco = true;
@@ -143,7 +155,7 @@ export default function Dashboard() {
     setCarregando(false);
   };
 
-  // Minha função de disparo em lote (manda a folha pra todos)
+  // Minhas funções de disparo em lote e individual (fecha a folha)
   const fecharFolhaDoMes = async () => {
     if(!window.confirm(`ATENÇÃO GESTOR:\nVocê está prestes a FECHAR a folha de ${mesFiltro} para TODOS os colaboradores.\nIsso enviará o espelho de ponto deste mês para todos assinarem digitalmente pelo aplicativo.\n\nTem certeza que os registros estão corretos?`)) return;
     setCarregando(true);
@@ -153,7 +165,6 @@ export default function Dashboard() {
     buscarDados();
   };
 
-  // Minha função cirúrgica (fecha a folha de um cara só que foi demitido ou algo assim)
   const fecharFolhaIndividual = async (funcionarioId, funcionarioNome) => {
     if(!window.confirm(`ATENÇÃO GESTOR:\nVocê está prestes a FECHAR a folha de ${mesFiltro} APENAS para o colaborador(a) ${funcionarioNome}.\n\nTem certeza que os registros deste funcionário estão corretos?`)) return;
     setCarregando(true);
@@ -163,9 +174,7 @@ export default function Dashboard() {
       status: 'pendente'
     }, { onConflict: 'funcionario_id, mes_ano', ignoreDuplicates: true });
     
-    if(error) alert('Erro ao fechar a folha: ' + error.message); 
-    else alert(`Folha de ${funcionarioNome} fechada e enviada para assinatura!`);
-    
+    if(error) alert('Erro ao fechar a folha: ' + error.message); else alert(`Folha de ${funcionarioNome} fechada e enviada para assinatura!`);
     buscarDados();
   };
 
@@ -178,64 +187,74 @@ export default function Dashboard() {
   const enviarExtratoIndividualWhats = (funcionario) => {
     const [ano, mes] = mesFiltro.split('-');
     let texto = `*📄 EXTRATO DE HORAS - COMPETÊNCIA ${mes}/${ano}*\n\n*Colaborador:* ${funcionario.nome}\n*Total Acumulado:* ${funcionario.horasFormatadas}\n\n*Detalhamento:*\n`;
-    funcionario.logs.forEach(l => { texto += `📅 ${l.data} | 🟢 ${l.entrada ? l.entrada.hora : '-'} | 🔴 ${l.saida ? l.saida.hora : '-'} (${l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h` : '-'})\n`; });
+    funcionario.logs.forEach(l => { texto += `📅 ${l.data} | ${l.isEspecial ? `🌟 ${l.isEspecial}` : `🟢 ${l.entrada ? l.entrada.hora : '-'} | 🔴 ${l.saida ? l.saida.hora : '-'} (${l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h` : '-'})`}\n`; });
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(texto)}`, '_blank');
   };
 
-  // Minha lógica blindada para lançar manualmente sem duplicar horas
+  // === NOVO Lançamento Manual: O Motor que constrói os dias em massa (Folgas, Férias ou Dias Normais) ===
   const lancarPontoManual = async (e) => {
     e.preventDefault(); 
     setCarregando(true);
 
-    const dataInicio = new Date(`${formManual.data}T00:00:00`).toISOString();
-    const dataFim = new Date(`${formManual.data}T23:59:59`).toISOString();
+    const dataInicioIso = new Date(`${formManual.data_inicio}T00:00:00`).toISOString();
+    const dataFimIso = new Date(`${formManual.data_fim || formManual.data_inicio}T23:59:59`).toISOString();
 
+    // 1. Verifico se já existe QUALQUER coisa lançada no período escolhido
     const { data: registrosExistentes } = await supabase
       .from('registros_ponto')
       .select('id')
       .eq('funcionario_id', formManual.funcionario_id)
-      .gte('data_hora', dataInicio)
-      .lte('data_hora', dataFim);
+      .gte('data_hora', dataInicioIso)
+      .lte('data_hora', dataFimIso);
 
-    // Se já tem registro, eu pergunto se ele quer exterminar os velhos para colocar os novos
+    // Se já tem registro, pergunto se ele quer exterminar tudo que existe lá pra colocar o novo por cima
     if (registrosExistentes && registrosExistentes.length > 0) {
-      const confirma = window.confirm(`⚠️ ATENÇÃO!\n\nJá existem batidas de ponto registradas para este colaborador na data informada.\n\nDeseja SUBSTITUIR todos os pontos deste dia pelos novos horários (Entrada: ${formManual.hora_entrada} e Saída: ${formManual.hora_saida})?`);
-      
+      const confirma = window.confirm(`⚠️ ATENÇÃO!\n\nJá existem registros para este colaborador dentro do período informado.\n\nDeseja SUBSTITUIR tudo o que estiver lançado nestes dias pelos novos dados?`);
       if (!confirma) {
         setCarregando(false);
         return;
       }
-
       const idsParaDeletar = registrosExistentes.map(r => r.id);
-      
-      const { error: deleteError } = await supabase
-        .from('registros_ponto')
-        .delete()
-        .in('id', idsParaDeletar);
+      const { error: deleteError } = await supabase.from('registros_ponto').delete().in('id', idsParaDeletar);
 
-      if (deleteError) {
-        alert("Erro ao remover os pontos antigos: " + deleteError.message);
-        setCarregando(false);
-        return;
-      }
+      if (deleteError) { alert("Erro ao limpar os dias antigos: " + deleteError.message); setCarregando(false); return; }
     }
 
-    const dataIsoEntrada = new Date(`${formManual.data}T${formManual.hora_entrada}:00`).toISOString();
-    const dataIsoSaida = new Date(`${formManual.data}T${formManual.hora_saida}:00`).toISOString();
+    // 2. Agora eu crio um LOOP que vai do "Data Início" até "Data Fim" montando os dias
+    const batidasMassa = [];
+    const parseDate = (d) => { const [y, m, day] = d.split('-'); return new Date(y, m - 1, day); };
+    
+    let currentDate = parseDate(formManual.data_inicio);
+    const endDate = parseDate(formManual.data_fim || formManual.data_inicio);
 
-    const batidasMassa = [
-      { funcionario_id: formManual.funcionario_id, tipo_registro: 'entrada', data_hora: dataIsoEntrada, obra_nome: formManual.obra_nome },
-      { funcionario_id: formManual.funcionario_id, tipo_registro: 'saida', data_hora: dataIsoSaida, obra_nome: formManual.obra_nome }
-    ];
+    while (currentDate <= endDate) {
+      const dateStr = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
+      
+      // Se for trabalho comum, crio Entrada e Saída
+      if (formManual.tipo_lancamento === 'normal') {
+        batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'entrada', data_hora: new Date(`${dateStr}T${formManual.hora_entrada}:00`).toISOString(), obra_nome: formManual.obra_nome });
+        batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'saida', data_hora: new Date(`${dateStr}T${formManual.hora_saida}:00`).toISOString(), obra_nome: formManual.obra_nome });
+      } 
+      // Se for Especial (Folga, Viagem), eu "finjo" um ponto à meia noite, mas carimbo a obra como FOLGA
+      else {
+        const label = formManual.tipo_lancamento === 'folga' ? 'FOLGA' : formManual.tipo_lancamento === 'ferias' ? 'FÉRIAS' : 'VIAGEM';
+        batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'entrada', data_hora: new Date(`${dateStr}T00:00:00`).toISOString(), obra_nome: label });
+        batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'saida', data_hora: new Date(`${dateStr}T00:00:00`).toISOString(), obra_nome: label });
+      }
+      // Pulo pro próximo dia do loop
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
 
+    // 3. Jogo tudo pro banco de uma vez só!
     const { error } = await supabase.from('registros_ponto').insert(batidasMassa);
 
     if (!error) { 
       setModalAberto(false);
-      setFormManual({ funcionario_id: '', data: '', hora_entrada: '07:00', hora_saida: '17:00', obra_nome: 'Lançamento Manual / Base' });
+      // Reseto os estados pro próximo uso
+      setFormManual({ funcionario_id: '', tipo_lancamento: 'normal', data_inicio: '', data_fim: '', hora_entrada: '07:00', hora_saida: '17:00', obra_nome: 'Lançamento Manual / Base' });
       buscarDados(); 
     } else { 
-      alert("Erro ao lançar pontos."); 
+      alert("Erro ao lançar pontos no banco de dados."); 
     }
     setCarregando(false);
   };
@@ -270,15 +289,13 @@ export default function Dashboard() {
       
       <style>
         {`
-            /* Meu CSS cimentado na base! */
+            /* Meu CSS blindado para a tela e impressão (Aqui fica a mágica Anti-Guilhotina no PDF) */
             html, body { touch-action: pan-y; overscroll-behavior-y: none; -webkit-user-select: none; user-select: none; }
             input, select, textarea { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; }
 
-            /* === SOLUÇÃO DEFINITIVA DO BUG DA GUILHOTINA NO CELULAR === */
             @media print {
               @page { size: ${certificadoSelecionado ? 'A4 portrait' : 'A4 landscape'}; margin: 10mm; }
               
-              /* 1. Desligo todas as travas de tela (min-h-screen e overflow) que o iOS/Android tentam usar no PDF */
               html, body, #root, main, .min-h-screen { 
                 background: white !important; 
                 color: black !important; 
@@ -296,7 +313,6 @@ export default function Dashboard() {
               * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-shadow: none !important; color: black !important; box-sizing: border-box !important; }
               header, .tela-interativa, .modais-extracao { display: none !important; }
               
-              /* 2. O contêiner de impressão flui livremente */
               .area-impressao { 
                 display: block !important; 
                 position: relative !important; 
@@ -307,11 +323,9 @@ export default function Dashboard() {
                 padding: 10mm !important; 
               }
               
-              /* 3. A Tabela se ajusta automaticamente ao conteúdo da palavra (sem table-layout: fixed) */
               .pdf-table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; page-break-inside: auto !important; }
               .pdf-table th { border: 1px solid #cbd5e1 !important; padding: 8px 10px !important; font-size: 10px !important; background-color: #f1f5f9 !important; text-transform: uppercase !important; font-weight: bold !important; text-align: left !important; }
               
-              /* 4. A Trava da linha: se não couber, empurra a linha toda pra próxima página! */
               tr { page-break-inside: avoid !important; break-inside: avoid !important; -webkit-column-break-inside: avoid !important; page-break-after: auto !important; }
               .pdf-table td { border: 1px solid #cbd5e1 !important; padding: 8px 10px !important; font-size: 11px !important; vertical-align: middle !important; page-break-inside: avoid !important; break-inside: avoid !important; }
               
@@ -376,13 +390,27 @@ export default function Dashboard() {
                       {extratoSelecionado.logs.map((l, i) => (
                         <tr key={i} className="hover:bg-slate-800/30 transition-colors">
                           <td className="p-4 font-medium text-slate-200 whitespace-nowrap">{l.data}</td>
-                          <td className="p-4 text-[11px] text-blue-400 font-medium"><span className="flex items-center gap-1.5"><Building2 size={12}/> {l.entrada?.obra || l.saida?.obra || '-'}</span></td>
-                          <td className="p-4 text-emerald-400 font-bold">{l.entrada ? l.entrada.hora : '-'}</td>
-                          <td className="p-4 text-slate-400 text-xs whitespace-nowrap">{l.saida ? (l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
-                          <td className="p-4 text-slate-300 font-bold">{l.saida ? l.saida.hora : '-'}</td>
-                          <td className="p-4 font-mono font-bold text-right text-blue-400">
-                            {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
-                          </td>
+                          
+                          {/* MEU CONDICIONAL: Se for Folga/Férias, mostro diferente */}
+                          {l.isEspecial ? (
+                            <>
+                              <td className="p-4 text-xs font-bold text-amber-400 uppercase tracking-wider">{l.isEspecial}</td>
+                              <td className="p-4 text-slate-600">-</td>
+                              <td className="p-4 text-slate-600">-</td>
+                              <td className="p-4 text-slate-600">-</td>
+                              <td className="p-4 text-slate-600 text-right">-</td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="p-4 text-[11px] text-blue-400 font-medium"><span className="flex items-center gap-1.5"><Building2 size={12}/> {l.entrada?.obra || l.saida?.obra || '-'}</span></td>
+                              <td className="p-4 text-emerald-400 font-bold">{l.entrada ? l.entrada.hora : '-'}</td>
+                              <td className="p-4 text-slate-400 text-xs whitespace-nowrap">{l.saida ? (l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
+                              <td className="p-4 text-slate-300 font-bold">{l.saida ? l.saida.hora : '-'}</td>
+                              <td className="p-4 font-mono font-bold text-right text-blue-400">
+                                {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
+                              </td>
+                            </>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -407,13 +435,14 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Meu modal de lançamento manual: lança as duas horas juntas */}
+        {/* === NOVO MODAL: Lançamento Turbo (Múltiplos Dias e Férias) === */}
         {modalAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
               <button onClick={() => setModalAberto(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-3 rounded-xl hover:bg-slate-800 transition-colors z-50"><X size={20} /></button>
-              <h2 className="text-xl font-bold mb-6 font-['Montserrat'] mt-2">Lançamento Manual</h2>
+              <h2 className="text-xl font-bold mb-6 font-['Montserrat'] mt-2">Lançamento de Ponto</h2>
               <form onSubmit={lancarPontoManual} className="flex flex-col gap-4">
+                
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Colaborador</label>
                   <select required value={formManual.funcionario_id} onChange={e => setFormManual({...formManual, funcionario_id: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-emerald-500 outline-none">
@@ -421,40 +450,61 @@ export default function Dashboard() {
                     {funcionarios.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
                   </select>
                 </div>
+
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Tipo de Lançamento</label>
+                  <select required value={formManual.tipo_lancamento} onChange={e => setFormManual({...formManual, tipo_lancamento: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-emerald-500 outline-none font-semibold">
+                    <option value="normal">Dia de Trabalho Normal</option>
+                    <option value="folga">Lançar Folga</option>
+                    <option value="ferias">Lançar Férias</option>
+                    <option value="viagem">Lançar Viagem Corporativa</option>
+                  </select>
+                </div>
                 
                 <div className="flex gap-4">
                   <div className="flex-1">
-                    <label className="text-xs text-slate-400 mb-1 block">Data da Batida</label>
-                    <input type="date" required value={formManual.data} onChange={e => setFormManual({...formManual, data: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
+                    <label className="text-xs text-slate-400 mb-1 block">Data Início</label>
+                    <input type="date" required value={formManual.data_inicio} onChange={e => setFormManual({...formManual, data_inicio: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
                   </div>
                   <div className="flex-1">
-                    <label className="text-xs text-slate-400 mb-1 block">Obra / Local</label>
-                    <select required value={formManual.obra_nome} onChange={e => setFormManual({...formManual, obra_nome: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-emerald-500 outline-none">
-                      <option value="Lançamento Manual / Base">Manual / Base</option>
-                      {obrasList.map(o => <option key={o.id} value={o.nome}>{o.nome}</option>)}
-                    </select>
+                    <label className="text-xs text-slate-400 mb-1 block">Data Fim <span className="text-[9px] text-slate-500">(Opcional)</span></label>
+                    <input type="date" value={formManual.data_fim} onChange={e => setFormManual({...formManual, data_fim: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
                   </div>
                 </div>
 
-                <div className="flex gap-4 mt-2">
-                  <div className="flex-1">
-                    <label className="text-xs text-slate-400 mb-1 block">Hora da Entrada</label>
-                    <input type="time" required value={formManual.hora_entrada} onChange={e => setFormManual({...formManual, hora_entrada: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
+                {/* Se for trabalho normal, peço a Obra e a Hora. Se for Férias, eu oculto isso! */}
+                {formManual.tipo_lancamento === 'normal' && (
+                  <div className="animate-in fade-in slide-in-from-top-2 flex flex-col gap-4">
+                    <div>
+                      <label className="text-xs text-slate-400 mb-1 block">Obra / Local</label>
+                      <select required value={formManual.obra_nome} onChange={e => setFormManual({...formManual, obra_nome: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-emerald-500 outline-none">
+                        <option value="Lançamento Manual / Base">Manual / Base</option>
+                        {obrasList.map(o => <option key={o.id} value={o.nome}>{o.nome}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="flex gap-4">
+                      <div className="flex-1">
+                        <label className="text-xs text-slate-400 mb-1 block">Hora da Entrada</label>
+                        <input type="time" required value={formManual.hora_entrada} onChange={e => setFormManual({...formManual, hora_entrada: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-xs text-slate-400 mb-1 block">Hora da Saída</label>
+                        <input type="time" required value={formManual.hora_saida} onChange={e => setFormManual({...formManual, hora_saida: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <label className="text-xs text-slate-400 mb-1 block">Hora da Saída</label>
-                    <input type="time" required value={formManual.hora_saida} onChange={e => setFormManual({...formManual, hora_saida: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
-                  </div>
-                </div>
+                )}
 
                 <button type="submit" disabled={carregando} className="mt-4 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition-colors">
-                  {carregando ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'Registrar Dia Completo'}
+                  {carregando ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'Processar Registros'}
                 </button>
               </form>
             </div>
           </div>
         )}
 
+        {/* Restante dos modais da tela (Obras, etc) continuam intactos */}
         {modalObraAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-4xl p-6 md:p-8 shadow-2xl relative flex flex-col md:flex-row gap-8 max-h-[90vh] overflow-y-auto">
@@ -589,18 +639,38 @@ export default function Dashboard() {
                 <tbody className="divide-y divide-slate-800/40">
                   {pontosAgrupados.map((linha, index) => (
                     <tr key={index} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="p-5"><div className="font-medium text-slate-200 text-sm">{linha.nome}</div><div className="text-[10px] text-blue-400 font-medium flex items-center gap-1 mt-1"><Building2 size={10} /> {linha.entrada?.obra || linha.saida?.obra || 'Não especificada'}</div></td>
-                      <td className="p-5 text-slate-400 text-sm font-mono whitespace-nowrap">{linha.data}</td>
-                      <td className="p-5">{linha.entrada ? ( <div className="flex items-start gap-3">{linha.entrada.foto && <img src={linha.entrada.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.entrada.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-emerald-400 text-base">{linha.entrada.hora}</span>{linha.entrada.gps && <BadgeLocalizacao gps={linha.entrada.gps} />}</div></div> ) : <span className="text-slate-700">-</span>}</td>
-                      <td className="p-5 text-slate-400 text-xs whitespace-nowrap">{linha.saida ? (linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
-                      <td className="p-5">{linha.saida ? ( <div className="flex items-start gap-3">{linha.saida.foto && <img src={linha.saida.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.saida.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-slate-300 text-base">{linha.saida.hora}</span>{linha.saida.gps && <BadgeLocalizacao gps={linha.saida.gps} />}</div></div> ) : <span className="text-xs bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full font-medium">Em andamento</span>}</td>
-                      <td className="p-5 text-right">
-                        {linha.minutosTrabalhadosDia > 0 ? ( 
-                          <span className="inline-flex items-center gap-1 bg-slate-900 text-blue-400 px-3 py-1.5 rounded-lg text-sm font-mono font-bold border border-slate-800">
-                            {Math.floor(linha.minutosTrabalhadosDia / 60)}h {(linha.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m
-                          </span> 
-                        ) : <span className="text-slate-600">-</span>}
+                      <td className="p-5">
+                        <div className="font-medium text-slate-200 text-sm">{linha.nome}</div>
+                        {linha.isEspecial ? (
+                           <div className="text-[10px] text-amber-400 font-bold uppercase tracking-wider mt-1">{linha.isEspecial}</div>
+                        ) : (
+                           <div className="text-[10px] text-blue-400 font-medium flex items-center gap-1 mt-1"><Building2 size={10} /> {linha.entrada?.obra || linha.saida?.obra || 'Não especificada'}</div>
+                        )}
                       </td>
+                      <td className="p-5 text-slate-400 text-sm font-mono whitespace-nowrap">{linha.data}</td>
+                      
+                      {/* Meu condicional na tela geral se for folga/férias */}
+                      {linha.isEspecial ? (
+                        <>
+                          <td className="p-5 text-slate-600">-</td>
+                          <td className="p-5 text-slate-600">-</td>
+                          <td className="p-5 text-slate-600">-</td>
+                          <td className="p-5 text-slate-600 text-right">-</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="p-5">{linha.entrada ? ( <div className="flex items-start gap-3">{linha.entrada.foto && <img src={linha.entrada.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.entrada.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-emerald-400 text-base">{linha.entrada.hora}</span>{linha.entrada.gps && <BadgeLocalizacao gps={linha.entrada.gps} />}</div></div> ) : <span className="text-slate-700">-</span>}</td>
+                          <td className="p-5 text-slate-400 text-xs whitespace-nowrap">{linha.saida ? (linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
+                          <td className="p-5">{linha.saida ? ( <div className="flex items-start gap-3">{linha.saida.foto && <img src={linha.saida.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.saida.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-slate-300 text-base">{linha.saida.hora}</span>{linha.saida.gps && <BadgeLocalizacao gps={linha.saida.gps} />}</div></div> ) : <span className="text-xs bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full font-medium">Em andamento</span>}</td>
+                          <td className="p-5 text-right">
+                            {linha.minutosTrabalhadosDia > 0 ? ( 
+                              <span className="inline-flex items-center gap-1 bg-slate-900 text-blue-400 px-3 py-1.5 rounded-lg text-sm font-mono font-bold border border-slate-800">
+                                {Math.floor(linha.minutosTrabalhadosDia / 60)}h {(linha.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m
+                              </span> 
+                            ) : <span className="text-slate-600">-</span>}
+                          </td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -659,20 +729,32 @@ export default function Dashboard() {
                 {extratoSelecionado.logs.map((l, i) => ( 
                   <tr key={i}>
                     <td style={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>{l.data}</td>
-                    <td>{l.entrada?.obra || l.saida?.obra || '-'}</td>
-                    <td>{l.entrada ? l.entrada.hora : '-'}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{l.saida ? (l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
-                    <td>{l.saida ? l.saida.hora : '-'}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace' }}>
-                      {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
-                    </td>
+                    {l.isEspecial ? (
+                      <>
+                        <td style={{ fontWeight: 'bold', color: '#475569' }}>{l.isEspecial}</td>
+                        <td style={{ textAlign: 'center', color: '#94a3b8' }}>-</td>
+                        <td style={{ textAlign: 'center', color: '#94a3b8' }}>-</td>
+                        <td style={{ textAlign: 'center', color: '#94a3b8' }}>-</td>
+                        <td style={{ textAlign: 'right', color: '#94a3b8' }}>-</td>
+                      </>
+                    ) : (
+                      <>
+                        <td>{l.entrada?.obra || l.saida?.obra || '-'}</td>
+                        <td>{l.entrada ? l.entrada.hora : '-'}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{l.saida ? (l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
+                        <td>{l.saida ? l.saida.hora : '-'}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                          {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
+                        </td>
+                      </>
+                    )}
                   </tr> 
                 ))}
               </tbody>
             </table>
             <div className="pdf-box"><span style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '11px' }}>Saldo Acumulado:</span><span style={{ fontSize: '14px', fontWeight: 'bold', fontFamily: 'monospace' }}>{extratoSelecionado.horasFormatadas}</span></div>
             
-            {/* O Carimbo provando que já está assinado */}
+            {/* O Carimbo bonitão provando que já está assinado */}
             {extratoSelecionado.folha?.status === 'assinado' && (
               <div style={{ marginTop: '30px', padding: '15px', border: '2px solid #10b981', borderRadius: '8px', backgroundColor: '#ecfdf5', color: '#065f46' }}>
                 <h4 style={{ margin: '0 0 10px 0', textTransform: 'uppercase', fontSize: '12px' }}>✓ Documento Assinado Eletronicamente</h4>
@@ -695,25 +777,45 @@ export default function Dashboard() {
             <table className="pdf-table" style={{ marginTop: '5px' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '22%' }}>Colaborador / Obra</th>
-                  <th style={{ width: '12%', whiteSpace: 'nowrap' }}>Data</th>
-                  <th style={{ width: '12%' }}>Entrada</th>
-                  <th style={{ width: '22%' }}>Intervalo</th>
-                  <th style={{ width: '12%' }}>Saída</th>
-                  <th style={{ width: '20%', textAlign: 'right' }}>Total Dia</th>
+                  <th>Colaborador / Obra</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Data</th>
+                  <th>Entrada</th>
+                  <th>Intervalo</th>
+                  <th>Saída</th>
+                  <th style={{ textAlign: 'right' }}>Total Dia</th>
                 </tr>
               </thead>
               <tbody>
                 {pontosAgrupados.map((linha, index) => ( 
                   <tr key={index}>
-                    <td style={{ fontWeight: 'bold' }}>{linha.nome}<div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: 'normal' }}>{linha.entrada?.obra || linha.saida?.obra || ''}</div></td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{linha.data}</td>
-                    <td>{linha.entrada ? linha.entrada.hora : '-'}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{linha.saida ? (linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
-                    <td>{linha.saida ? linha.saida.hora : (linha.minutosTrabalhadosDia === 0 ? 'Em andamento' : '-')}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold' }}>
-                      {linha.minutosTrabalhadosDia > 0 ? `${Math.floor(linha.minutosTrabalhadosDia / 60)}h ${(linha.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
+                    <td style={{ fontWeight: 'bold' }}>
+                      {linha.nome}
+                      {linha.isEspecial ? (
+                         <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: 'bold', textTransform: 'uppercase' }}>{linha.isEspecial}</div>
+                      ) : (
+                         <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: 'normal' }}>{linha.entrada?.obra || linha.saida?.obra || ''}</div>
+                      )}
                     </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{linha.data}</td>
+                    
+                    {/* Mais um condicional do pdf pra pular o miolo e botar traço no dia de folga */}
+                    {linha.isEspecial ? (
+                      <>
+                        <td style={{ textAlign: 'center', color: '#94a3b8' }}>-</td>
+                        <td style={{ textAlign: 'center', color: '#94a3b8' }}>-</td>
+                        <td style={{ textAlign: 'center', color: '#94a3b8' }}>-</td>
+                        <td style={{ textAlign: 'right', color: '#94a3b8' }}>-</td>
+                      </>
+                    ) : (
+                      <>
+                        <td>{linha.entrada ? linha.entrada.hora : '-'}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{linha.saida ? (linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
+                        <td>{linha.saida ? linha.saida.hora : (linha.minutosTrabalhadosDia === 0 ? 'Em andamento' : '-')}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                          {linha.minutosTrabalhadosDia > 0 ? `${Math.floor(linha.minutosTrabalhadosDia / 60)}h ${(linha.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
+                        </td>
+                      </>
+                    )}
                   </tr> 
                 ))}
               </tbody>
