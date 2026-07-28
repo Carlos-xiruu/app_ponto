@@ -270,29 +270,53 @@ export default function Dashboard() {
       
       <style>
         {`
-            /* Meu CSS blindado para a tela e impressão */
+            /* Meu CSS cimentado na base! */
             html, body { touch-action: pan-y; overscroll-behavior-y: none; -webkit-user-select: none; user-select: none; }
             input, select, textarea { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; }
 
-            /* === A MÁGICA DA PAGINAÇÃO ===
-               1. Tirei a obrigação de largura fixa da tabela.
-               2. Adicionei regras estritas de page-break-inside para as linhas (tr) e células (td).
-               Isso impede que o navegador corte a tabela horizontalmente no meio do texto.
-            */
+            /* === SOLUÇÃO DEFINITIVA DO BUG DA GUILHOTINA NO CELULAR === */
             @media print {
               @page { size: ${certificadoSelecionado ? 'A4 portrait' : 'A4 landscape'}; margin: 10mm; }
-              html, body, #root, main, .min-h-screen { background: white !important; color: black !important; display: block !important; width: 100% !important; margin: 0 !important; padding: 0 !important; box-sizing: border-box !important; }
+              
+              /* 1. Desligo todas as travas de tela (min-h-screen e overflow) que o iOS/Android tentam usar no PDF */
+              html, body, #root, main, .min-h-screen { 
+                background: white !important; 
+                color: black !important; 
+                display: block !important; 
+                position: relative !important;
+                width: 100% !important; 
+                height: auto !important; 
+                min-height: auto !important; 
+                overflow: visible !important; 
+                margin: 0 !important; 
+                padding: 0 !important; 
+                box-sizing: border-box !important; 
+              }
+              
               * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-shadow: none !important; color: black !important; box-sizing: border-box !important; }
               header, .tela-interativa, .modais-extracao { display: none !important; }
-              .area-impressao { display: block !important; position: relative !important; width: 100% !important; background: white !important; padding: 10mm !important; box-sizing: border-box !important; }
               
-              .pdf-table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; page-break-inside: auto !important; break-inside: auto !important; }
+              /* 2. O contêiner de impressão flui livremente */
+              .area-impressao { 
+                display: block !important; 
+                position: relative !important; 
+                width: 100% !important; 
+                height: auto !important; 
+                overflow: visible !important; 
+                background: white !important; 
+                padding: 10mm !important; 
+              }
+              
+              /* 3. A Tabela se ajusta automaticamente ao conteúdo da palavra (sem table-layout: fixed) */
+              .pdf-table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; page-break-inside: auto !important; }
               .pdf-table th { border: 1px solid #cbd5e1 !important; padding: 8px 10px !important; font-size: 10px !important; background-color: #f1f5f9 !important; text-transform: uppercase !important; font-weight: bold !important; text-align: left !important; }
               
-              /* Regras de Anti-Guilhotina (Impede o corte de linha) */
+              /* 4. A Trava da linha: se não couber, empurra a linha toda pra próxima página! */
+              tr { page-break-inside: avoid !important; break-inside: avoid !important; -webkit-column-break-inside: avoid !important; page-break-after: auto !important; }
               .pdf-table td { border: 1px solid #cbd5e1 !important; padding: 8px 10px !important; font-size: 11px !important; vertical-align: middle !important; page-break-inside: avoid !important; break-inside: avoid !important; }
-              tr { page-break-inside: avoid !important; break-inside: avoid !important; page-break-after: auto !important; }
+              
               thead { display: table-header-group !important; }
+              tfoot { display: table-footer-group !important; }
               
               .pdf-title { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 18px !important; margin: 0 0 5px 0 !important; text-transform: uppercase !important; border-bottom: 2px solid #cbd5e1 !important; padding-bottom: 8px !important; }
               .pdf-subtitle { font-size: 11px !important; color: #475569 !important; margin: 6px 0 15px 0 !important; }
@@ -337,7 +361,6 @@ export default function Dashboard() {
               
               <div className="border border-slate-800 rounded-2xl overflow-hidden mb-6 shadow-lg">
                 <div className="overflow-x-auto">
-                  {/* Aumentei o min-width da tabela de tela para as colunas respirarem */}
                   <table className="w-full text-left text-sm border-collapse min-w-[750px]">
                     <thead>
                       <tr className="bg-slate-900/80 border-b border-slate-800">
@@ -384,7 +407,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Meu modal de lançamento manual: agora lança as duas horas juntas! */}
+        {/* Meu modal de lançamento manual: lança as duas horas juntas */}
         {modalAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
@@ -558,7 +581,6 @@ export default function Dashboard() {
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Colaborador / Obra</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">Data</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Entrada</th>
-                    {/* Inseri a coluna de Intervalo no meio do fluxo cronológico */}
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Intervalo</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Saída</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider text-right">Jornada Diária</th>
@@ -589,8 +611,9 @@ export default function Dashboard() {
       </div>
 
       {/* === MEUS LAYOUTS DE IMPRESSÃO (PDF) === */}
-      {/* Aqui as tabelas não têm mais porcentagens fixas, então o HTML se encarrega de esticar e amassar como água na jarra! */}
       <div className="hidden print:block area-impressao font-sans text-black">
+        
+        {/* LAUDO TÉCNICO DE AUDITORIA */}
         {certificadoSelecionado ? (
           <div className="certificado-container">
             <div className="certificado-header">
@@ -611,12 +634,15 @@ export default function Dashboard() {
             </div>
             <div style={{ marginTop: '40px' }}><p style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '5px' }}>Chave Criptográfica de Imutabilidade (Hash SHA-256):</p><div className="certificado-hash">{certificadoSelecionado.folha.hash_auditoria}</div></div>
           </div>
+          
+        /* EXTRATO INDIVIDUAL (AQUELE QUE O PEÃO RECEBE) */
         ) : extratoSelecionado ? (
           <div>
             <h1 className="pdf-title">DEMONSTRATIVO INDIVIDUAL DE JORNADA</h1>
             <p className="pdf-subtitle">Competência Fiscal: <strong>{mesFiltro.split('-')[1]}/{mesFiltro.split('-')[0]}</strong></p>
             <div className="pdf-section">1. Dados do Colaborador</div>
             <table className="pdf-table" style={{ marginTop: '5px', marginBottom: '20px' }}><thead><tr><th style={{ width: '50%' }}>Colaborador</th><th style={{ width: '50%' }}>Função / Cargo</th></tr></thead><tbody><tr><td style={{ fontWeight: 'bold', fontSize: '12px' }}>{extratoSelecionado.nome}</td><td style={{ fontWeight: 'bold', fontSize: '12px' }}>{extratoSelecionado.cargo}</td></tr></tbody></table>
+            
             <div className="pdf-section">2. Espelho de Ponto Detalhado</div>
             <table className="pdf-table" style={{ marginTop: '5px' }}>
               <thead>
@@ -646,6 +672,7 @@ export default function Dashboard() {
             </table>
             <div className="pdf-box"><span style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '11px' }}>Saldo Acumulado:</span><span style={{ fontSize: '14px', fontWeight: 'bold', fontFamily: 'monospace' }}>{extratoSelecionado.horasFormatadas}</span></div>
             
+            {/* O Carimbo provando que já está assinado */}
             {extratoSelecionado.folha?.status === 'assinado' && (
               <div style={{ marginTop: '30px', padding: '15px', border: '2px solid #10b981', borderRadius: '8px', backgroundColor: '#ecfdf5', color: '#065f46' }}>
                 <h4 style={{ margin: '0 0 10px 0', textTransform: 'uppercase', fontSize: '12px' }}>✓ Documento Assinado Eletronicamente</h4>
@@ -656,6 +683,8 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+
+        /* RELATÓRIO GERAL (TODOS OS PEÕES) */
         ) : (
           <div>
             <h1 className="pdf-title">RELATÓRIO GERENCIAL DE FECHAMENTO</h1>
@@ -666,12 +695,12 @@ export default function Dashboard() {
             <table className="pdf-table" style={{ marginTop: '5px' }}>
               <thead>
                 <tr>
-                  <th>Colaborador / Obra</th>
-                  <th style={{ whiteSpace: 'nowrap' }}>Data</th>
-                  <th>Entrada</th>
-                  <th>Intervalo</th>
-                  <th>Saída</th>
-                  <th style={{ textAlign: 'right' }}>Total Dia</th>
+                  <th style={{ width: '22%' }}>Colaborador / Obra</th>
+                  <th style={{ width: '12%', whiteSpace: 'nowrap' }}>Data</th>
+                  <th style={{ width: '12%' }}>Entrada</th>
+                  <th style={{ width: '22%' }}>Intervalo</th>
+                  <th style={{ width: '12%' }}>Saída</th>
+                  <th style={{ width: '20%', textAlign: 'right' }}>Total Dia</th>
                 </tr>
               </thead>
               <tbody>
