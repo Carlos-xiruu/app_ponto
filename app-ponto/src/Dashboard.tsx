@@ -274,10 +274,10 @@ export default function Dashboard() {
             html, body { touch-action: pan-y; overscroll-behavior-y: none; -webkit-user-select: none; user-select: none; }
             input, select, textarea { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; }
 
-            /* AQUI ESTÁ A MÁGICA DA CORREÇÃO DO PDF:
-               1. Alterei as duas tabelas para A4 Landscape (Paisagem) para sobrar espaço.
-               2. Retirei o 'table-layout: fixed', agora o HTML calcula a largura exata de cada palavra!
-               3. Ajustei os paddings para deixar as colunas respirarem.
+            /* === A MÁGICA DA PAGINAÇÃO ===
+               1. Tirei a obrigação de largura fixa da tabela.
+               2. Adicionei regras estritas de page-break-inside para as linhas (tr) e células (td).
+               Isso impede que o navegador corte a tabela horizontalmente no meio do texto.
             */
             @media print {
               @page { size: ${certificadoSelecionado ? 'A4 portrait' : 'A4 landscape'}; margin: 10mm; }
@@ -286,19 +286,20 @@ export default function Dashboard() {
               header, .tela-interativa, .modais-extracao { display: none !important; }
               .area-impressao { display: block !important; position: relative !important; width: 100% !important; background: white !important; padding: 10mm !important; box-sizing: border-box !important; }
               
-              .pdf-table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; }
+              .pdf-table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; page-break-inside: auto !important; break-inside: auto !important; }
               .pdf-table th { border: 1px solid #cbd5e1 !important; padding: 8px 10px !important; font-size: 10px !important; background-color: #f1f5f9 !important; text-transform: uppercase !important; font-weight: bold !important; text-align: left !important; }
-              .pdf-table td { border: 1px solid #cbd5e1 !important; padding: 8px 10px !important; font-size: 11px !important; vertical-align: middle !important; }
               
+              /* Regras de Anti-Guilhotina (Impede o corte de linha) */
+              .pdf-table td { border: 1px solid #cbd5e1 !important; padding: 8px 10px !important; font-size: 11px !important; vertical-align: middle !important; page-break-inside: avoid !important; break-inside: avoid !important; }
+              tr { page-break-inside: avoid !important; break-inside: avoid !important; page-break-after: auto !important; }
               thead { display: table-header-group !important; }
-              tr { page-break-inside: avoid !important; page-break-after: auto !important; }
               
               .pdf-title { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 18px !important; margin: 0 0 5px 0 !important; text-transform: uppercase !important; border-bottom: 2px solid #cbd5e1 !important; padding-bottom: 8px !important; }
               .pdf-subtitle { font-size: 11px !important; color: #475569 !important; margin: 6px 0 15px 0 !important; }
-              .pdf-section { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 12px !important; border-bottom: 1px solid #cbd5e1 !important; padding-bottom: 4px !important; margin-top: 20px !important; margin-bottom: 8px !important; text-transform: uppercase !important; }
-              .pdf-box { border: 1px solid #cbd5e1 !important; padding: 12px !important; margin-top: 15px !important; display: flex !important; justify-content: space-between !important; background-color: #f8fafc !important; }
+              .pdf-section { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 12px !important; border-bottom: 1px solid #cbd5e1 !important; padding-bottom: 4px !important; margin-top: 20px !important; margin-bottom: 8px !important; text-transform: uppercase !important; page-break-inside: avoid !important; break-inside: avoid !important; }
+              .pdf-box { border: 1px solid #cbd5e1 !important; padding: 12px !important; margin-top: 15px !important; display: flex !important; justify-content: space-between !important; background-color: #f8fafc !important; page-break-inside: avoid !important; break-inside: avoid !important; }
 
-              .certificado-container { border: 4px double #1e293b !important; padding: 40px !important; border-radius: 10px !important; }
+              .certificado-container { border: 4px double #1e293b !important; padding: 40px !important; border-radius: 10px !important; page-break-inside: avoid !important; break-inside: avoid !important; }
               .certificado-header { text-align: center !important; margin-bottom: 30px !important; }
               .certificado-body { line-height: 1.8 !important; font-size: 12px !important; margin-bottom: 30px !important; text-align: justify !important;}
               .certificado-hash { font-family: monospace !important; background: #f1f5f9 !important; padding: 15px !important; border: 1px solid #cbd5e1 !important; word-wrap: break-word !important; font-size: 10px !important; }
@@ -557,6 +558,7 @@ export default function Dashboard() {
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Colaborador / Obra</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">Data</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Entrada</th>
+                    {/* Inseri a coluna de Intervalo no meio do fluxo cronológico */}
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Intervalo</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Saída</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider text-right">Jornada Diária</th>
@@ -587,7 +589,7 @@ export default function Dashboard() {
       </div>
 
       {/* === MEUS LAYOUTS DE IMPRESSÃO (PDF) === */}
-      {/* Aqui as tabelas não têm mais porcentagens fixas, então o HTML se encarrega de esticar  */}
+      {/* Aqui as tabelas não têm mais porcentagens fixas, então o HTML se encarrega de esticar e amassar como água na jarra! */}
       <div className="hidden print:block area-impressao font-sans text-black">
         {certificadoSelecionado ? (
           <div className="certificado-container">
