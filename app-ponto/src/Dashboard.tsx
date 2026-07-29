@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
-import { MapPin, Plus, X, FileText, Send, Share2, Eye, AlertTriangle, Building2, Trash2, Search, Navigation, Loader2, ArrowLeft, Clock, ShieldCheck, Fingerprint, FileSignature, Lock } from 'lucide-react';
+import { MapPin, Plus, X, FileText, Send, Share2, Eye, AlertTriangle, Building2, Trash2, Search, Navigation, Loader2, ArrowLeft, Clock, ShieldCheck, Fingerprint, FileSignature, Lock, Users, User, Key, Shield } from 'lucide-react';
 
 // Meu componente para renderizar o link do GPS transformado em endereço
 const BadgeLocalizacao = ({ gps }) => {
@@ -38,10 +38,14 @@ export default function Dashboard() {
   const [extratoSelecionado, setExtratoSelecionado] = useState(null); 
   const [certificadoSelecionado, setCertificadoSelecionado] = useState(null); 
   
+  // === NOVO: Estados da Gestão de Equipe ===
+  const [modalEquipeAberto, setModalEquipeAberto] = useState(false);
+  const [equipeCompleta, setEquipeCompleta] = useState([]);
+  
   const [buscandoEndereco, setBuscandoEndereco] = useState(false);
   const [resultadosBusca, setResultadosBusca] = useState([]); 
   
-  //  Meu formulário turbinado para aceitar Períodos de Datas, Folgas e Férias 
+  // Meu estado para controlar o formulário turbinado de lançamento manual
   const [formManual, setFormManual] = useState({ 
     funcionario_id: '', 
     tipo_lancamento: 'normal', // normal, folga, ferias, viagem
@@ -62,9 +66,15 @@ export default function Dashboard() {
   // Meu gatilho: sempre que o mês mudar, eu rodo a busca de dados de novo
   useEffect(() => { buscarDados(); }, [mesFiltro]);
 
+  // Meu gatilho secundário: buscar a equipe completa só quando abrir a tela de Gestão
+  useEffect(() => {
+    if (modalEquipeAberto) { buscarEquipeCompleta(); }
+  }, [modalEquipeAberto]);
+
   // Minha engrenagem principal: busca tudo no Supabase e mastiga a matemática de horas
   const buscarDados = async () => {
     setCarregando(true);
+    // Na tabela de horas, eu só exibo quem é funcionário comum (is_admin = false)
     const { data: perfis } = await supabase.from('perfis').select('id, nome, funcao, cpf').eq('is_admin', false).order('nome');
     if (perfis) setFuncionarios(perfis);
 
@@ -155,6 +165,58 @@ export default function Dashboard() {
     setCarregando(false);
   };
 
+  // === INÍCIO: MEU MOTOR DE GESTÃO DE EQUIPE (PROMOVER E DEMITIR) ===
+  const buscarEquipeCompleta = async () => {
+    // Aqui eu puxo TODO MUNDO, incluindo os admins, para podermos rebaixar se precisar
+    const { data } = await supabase.from('perfis').select('*').order('nome');
+    if (data) setEquipeCompleta(data);
+  };
+
+  const alternarPermissaoGestor = async (membro) => {
+    const novoStatus = !membro.is_admin;
+    const acao = novoStatus ? 'PROMOVER a Gestor' : 'REMOVER o acesso de Gestor de';
+    
+    if (!window.confirm(`Você deseja ${acao} ${membro.nome}?`)) return;
+
+    setCarregando(true);
+    const { error } = await supabase.from('perfis').update({ is_admin: novoStatus }).eq('id', membro.id);
+
+    if (error) {
+      alert("Erro ao alterar permissão: " + error.message);
+    } else {
+      alert(`Feito! ${novoStatus ? 'Acesso concedido.' : 'Acesso removido.'}\n\nAVISO: Peça para o colaborador FECHAR O APLICATIVO E ABRIR DE NOVO no celular dele para o sistema atualizar a tela.`);
+      buscarEquipeCompleta();
+      buscarDados(); // Atualiza a tabela de horas por trás também
+    }
+    setCarregando(false);
+  };
+
+  const excluirColaborador = async (membro) => {
+    if (!window.confirm(`⚠️ EXCLUSÃO DE CONTA ⚠️\n\nTem certeza que deseja EXCLUIR DEFINITIVAMENTE o colaborador ${membro.nome}?\n\nIsso apagará o acesso dele, todas as folhas de pagamento e todo o histórico de pontos dele do sistema. Esta ação não tem volta.`)) return;
+
+    setCarregando(true);
+    
+    // 1. Cirurgia limpa: Apago as folhas de pagamento dele primeiro
+    await supabase.from('folhas_pagamento').delete().eq('funcionario_id', membro.id);
+    
+    // 2. Apago todo o histórico de pontos
+    await supabase.from('registros_ponto').delete().eq('funcionario_id', membro.id);
+    
+    // 3. Mato o perfil dele no banco (A conta "auth" do Supabase fica inativa, mas ele perde todo acesso ao sistema)
+    const { error } = await supabase.from('perfis').delete().eq('id', membro.id);
+
+    if (error) {
+      alert("Erro ao excluir colaborador: " + error.message);
+    } else {
+      alert(`${membro.nome} foi removido do sistema com sucesso!`);
+      buscarEquipeCompleta();
+      buscarDados();
+    }
+    setCarregando(false);
+  };
+  // === FIM: MOTOR DE GESTÃO DE EQUIPE ===
+
+
   // Minhas funções de disparo em lote e individual (fecha a folha)
   const fecharFolhaDoMes = async () => {
     if(!window.confirm(`ATENÇÃO GESTOR:\nVocê está prestes a FECHAR a folha de ${mesFiltro} para TODOS os colaboradores.\nIsso enviará o espelho de ponto deste mês para todos assinarem digitalmente pelo aplicativo.\n\nTem certeza que os registros estão corretos?`)) return;
@@ -186,12 +248,31 @@ export default function Dashboard() {
 
   const enviarExtratoIndividualWhats = (funcionario) => {
     const [ano, mes] = mesFiltro.split('-');
+
     let texto = `*📄 EXTRATO DE HORAS - COMPETÊNCIA ${mes}/${ano}*\n\n*Colaborador:* ${funcionario.nome}\n*Total Acumulado:* ${funcionario.horasFormatadas}\n\n*Detalhamento:*\n`;
-    funcionario.logs.forEach(l => { texto += `📅 ${l.data} | ${l.isEspecial ? `🌟 ${l.isEspecial}` : `🟢 ${l.entrada ? l.entrada.hora : '-'} | 🔴 ${l.saida ? l.saida.hora : '-'} (${l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h` : '-'})`}\n`; });
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(texto)}`, '_blank');
+
+    funcionario.logs.forEach((l) => {
+      const horarioEntrada = l.entrada ? l.entrada.hora : '-';
+      const horarioSaida = l.saida ? l.saida.hora : '-';
+      const horasDia =
+        l.minutosTrabalhadosDia > 0
+          ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h`
+          : '-';
+
+      const linha = l.isEspecial
+        ? `📅 ${l.data} | 🌟 ${l.isEspecial}\n`
+        : `📅 ${l.data} | 🟢 ${horarioEntrada} | 🔴 ${horarioSaida} (${horasDia})\n`;
+
+      texto += linha;
+    });
+
+    window.open(
+      `https://api.whatsapp.com/send?text=${encodeURIComponent(texto)}`,
+      '_blank'
+    );
   };
 
-  // === NOVO Lançamento Manual: O Motor que constrói os dias em massa (Folgas, Férias ou Dias Normais) ===
+  // === Lançamento Manual: O Motor que constrói os dias em massa (Folgas, Férias ou Dias Normais) ===
   const lancarPontoManual = async (e) => {
     e.preventDefault(); 
     setCarregando(true);
@@ -347,6 +428,59 @@ export default function Dashboard() {
 
       {/* ÁREA DE MODAIS (Minhas sobreposições na tela) */}
       <div className="modais-extracao">
+        
+        {/*  GESTÃO DE EQUIPE = */}
+        {modalEquipeAberto && (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
+            <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-3xl p-6 md:p-8 shadow-2xl relative max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95">
+              <button onClick={() => setModalEquipeAberto(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-3 rounded-xl hover:bg-slate-800 transition-colors z-50"><X size={24} /></button>
+              
+              <div className="mb-6 border-b border-slate-800 pb-4 pr-8">
+                 <h2 className="text-2xl font-bold font-['Montserrat'] text-white flex items-center gap-2"><Users size={28} className="text-blue-400" /> Gestão de Equipe</h2>
+                 <p className="text-sm text-slate-400 mt-1">Conceda permissões de Gestor ou exclua contas de colaboradores desligados.</p>
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+                {carregando ? (
+                  <div className="flex justify-center py-10"><Loader2 size={32} className="animate-spin text-blue-500"/></div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                     {equipeCompleta.map(membro => (
+                       <div key={membro.id} className="bg-slate-900/80 border border-slate-700/60 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-800 transition-colors group">
+                          <div>
+                             <span className="block text-sm font-bold text-slate-100">{membro.nome}</span>
+                             <span className="block text-[11px] text-slate-400 font-mono mt-1">{membro.cpf ? `CPF: ${membro.cpf}` : 'Sem CPF'} • {membro.funcao || 'Sem função'}</span>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                             {/* Badge visual de quem manda na parada */}
+                             {membro.is_admin ? (
+                               <span className="px-3 py-1.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5"><Shield size={14}/> Gestor</span>
+                             ) : (
+                               <span className="px-3 py-1.5 bg-slate-800 text-slate-400 border border-slate-700 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5"><User size={14}/> Comum</span>
+                             )}
+
+                             <div className="h-8 w-px bg-slate-700 mx-1 hidden sm:block"></div>
+
+                             {/* Botão de Promover/Rebaixar */}
+                             <button onClick={() => alternarPermissaoGestor(membro)} title={membro.is_admin ? "Remover acesso de Gestor" : "Tornar Gestor do Sistema"} className={`p-2.5 rounded-lg transition-colors flex items-center gap-2 ${membro.is_admin ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white' : 'bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white'}`}>
+                                <Key size={18} />
+                             </button>
+
+                             {/* Botão da Guilhotina (Demissão) */}
+                             <button onClick={() => excluirColaborador(membro)} title="Excluir Conta e Histórico" className="p-2.5 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-lg transition-colors flex items-center gap-2">
+                                <Trash2 size={18} />
+                             </button>
+                          </div>
+                       </div>
+                     ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {fotoExpandida && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"><div className="relative max-w-xl w-full flex flex-col items-center"><button onClick={() => setFotoExpandida(null)} className="absolute -top-12 right-0 p-3 bg-slate-800 hover:bg-slate-700 rounded-full text-white z-50"><X size={24} /></button><img src={fotoExpandida} alt="Auditoria" className="w-full h-auto max-h-[80vh] object-cover rounded-2xl border-4 border-slate-700" /></div></div>
         )}
@@ -435,7 +569,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* === NOVO MODAL: Lançamento Turbo (Múltiplos Dias e Férias) === */}
+        {/* Meu modal de lançamento manual reformulado */}
         {modalAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
@@ -461,7 +595,8 @@ export default function Dashboard() {
                   </select>
                 </div>
                 
-                <div className="flex gap-4">
+                {/* Minha correção de responsividade da data */}
+                <div className="flex flex-col sm:flex-row gap-4">
                   <div className="flex-1">
                     <label className="text-xs text-slate-400 mb-1 block">Data Início</label>
                     <input type="date" required value={formManual.data_inicio} onChange={e => setFormManual({...formManual, data_inicio: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
@@ -472,7 +607,7 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Se for trabalho normal, peço a Obra e a Hora. Se for Férias, eu oculto isso! */}
+                {/* Se for trabalho normal, peço a Obra e a Hora. Se for Férias/Folga, eu oculto isso! */}
                 {formManual.tipo_lancamento === 'normal' && (
                   <div className="animate-in fade-in slide-in-from-top-2 flex flex-col gap-4">
                     <div>
@@ -483,7 +618,7 @@ export default function Dashboard() {
                       </select>
                     </div>
 
-                    <div className="flex gap-4">
+                    <div className="flex flex-col sm:flex-row gap-4 mt-2">
                       <div className="flex-1">
                         <label className="text-xs text-slate-400 mb-1 block">Hora da Entrada</label>
                         <input type="time" required value={formManual.hora_entrada} onChange={e => setFormManual({...formManual, hora_entrada: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white [color-scheme:dark] focus:border-emerald-500 outline-none" />
@@ -553,8 +688,11 @@ export default function Dashboard() {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-5">
             <div><h1 className="font-['Montserrat'] text-2xl md:text-3xl font-bold text-white mb-1">Painel de Fechamento</h1><p className="text-slate-400 text-sm">Gestão de horas, equipe e auditoria de assinaturas.</p></div>
             <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full md:w-auto">
-              <button onClick={fecharFolhaDoMes} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-blue-900/30"><FileSignature size={18} /> Fechar Mês Geral</button>
-              <button onClick={() => setModalAberto(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700/60 font-semibold text-sm rounded-xl transition-all shadow-sm"><Plus size={18} /> Ponto Manual</button>
+              {/* Meu novo botão de Gestão de Equipe aqui no topo */}
+              <button onClick={() => setModalEquipeAberto(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 font-bold text-sm rounded-xl transition-all shadow-sm"><Users size={18} /> Equipe</button>
+              
+              <button onClick={fecharFolhaDoMes} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-emerald-900/30"><FileSignature size={18} /> Fechar Mês</button>
+              <button onClick={() => setModalAberto(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700/60 font-semibold text-sm rounded-xl transition-all shadow-sm"><Plus size={18} /> Lançamento</button>
               <button onClick={() => setModalObraAberto(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 font-semibold text-sm rounded-xl transition-all shadow-sm"><Building2 size={18} /> Obras</button>
               <button onClick={() => { setExtratoSelecionado(null); setTimeout(() => window.print(), 100); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 font-semibold text-sm rounded-xl transition-all shadow-sm"><FileText size={18} /> PDF Geral</button>
             </div>
@@ -702,7 +840,7 @@ export default function Dashboard() {
                 <p><strong>COORDENADA GEOGRÁFICA (GPS):</strong> {certificadoSelecionado.folha.gps_assinatura}</p>
               </div>
             </div>
-            <div style={{ marginTop: '40px' }}><p style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '5px' }}>Chave Criptográfica de Imutabilidade (Hash SHA-256):</p><div className="certificado-hash">{certificadoSelecionado.folha.hash_auditoria}</div></div>
+            <div style={{ marginTop: '40px' }}><p style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '5px' }}>Chave Criptográfico de Imutabilidade (Hash SHA-256):</p><div className="certificado-hash">{certificadoSelecionado.folha.hash_auditoria}</div></div>
           </div>
           
         /* EXTRATO INDIVIDUAL (AQUELE QUE O PEÃO RECEBE) */
