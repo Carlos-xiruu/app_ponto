@@ -38,7 +38,7 @@ export default function Dashboard() {
   const [extratoSelecionado, setExtratoSelecionado] = useState(null); 
   const [certificadoSelecionado, setCertificadoSelecionado] = useState(null); 
   
-  // === NOVO: Estados da Gestão de Equipe ===
+  // Estados da Gestão de Equipe
   const [modalEquipeAberto, setModalEquipeAberto] = useState(false);
   const [equipeCompleta, setEquipeCompleta] = useState([]);
   
@@ -165,7 +165,7 @@ export default function Dashboard() {
     setCarregando(false);
   };
 
-  // === INÍCIO: MEU MOTOR DE GESTÃO DE EQUIPE (PROMOVER E DEMITIR) ===
+  // INÍCIO: MEU MOTOR DE GESTÃO DE EQUIPE (PROMOVER E DEMITIR)
   const buscarEquipeCompleta = async () => {
     // Aqui eu puxo TODO MUNDO, incluindo os admins, para podermos rebaixar se precisar
     const { data } = await supabase.from('perfis').select('*').order('nome');
@@ -214,7 +214,7 @@ export default function Dashboard() {
     }
     setCarregando(false);
   };
-  // === FIM: MOTOR DE GESTÃO DE EQUIPE ===
+  // FIM: MOTOR DE GESTÃO DE EQUIPE
 
 
   // Minhas funções de disparo em lote e individual (fecha a folha)
@@ -248,31 +248,17 @@ export default function Dashboard() {
 
   const enviarExtratoIndividualWhats = (funcionario) => {
     const [ano, mes] = mesFiltro.split('-');
-
     let texto = `*📄 EXTRATO DE HORAS - COMPETÊNCIA ${mes}/${ano}*\n\n*Colaborador:* ${funcionario.nome}\n*Total Acumulado:* ${funcionario.horasFormatadas}\n\n*Detalhamento:*\n`;
-
-    funcionario.logs.forEach((l) => {
-      const horarioEntrada = l.entrada ? l.entrada.hora : '-';
-      const horarioSaida = l.saida ? l.saida.hora : '-';
-      const horasDia =
-        l.minutosTrabalhadosDia > 0
-          ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h`
-          : '-';
-
-      const linha = l.isEspecial
-        ? `📅 ${l.data} | 🌟 ${l.isEspecial}\n`
-        : `📅 ${l.data} | 🟢 ${horarioEntrada} | 🔴 ${horarioSaida} (${horasDia})\n`;
-
-      texto += linha;
+    funcionario.logs.forEach(l => {
+      texto += `📅 ${l.data} | ${l.isEspecial
+        ? `🌟 ${l.isEspecial}`
+        : `🟢 ${l.entrada ? l.entrada.hora : '-'} | 🔴 ${l.saida ? l.saida.hora : '-'} (${l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h` : '-'})`
+      }\n`;
     });
-
-    window.open(
-      `https://api.whatsapp.com/send?text=${encodeURIComponent(texto)}`,
-      '_blank'
-    );
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(texto)}`, '_blank');
   };
 
-  // === Lançamento Manual: O Motor que constrói os dias em massa (Folgas, Férias ou Dias Normais) ===
+  // Lançamento Manual: O Motor que constrói os dias em massa (Folgas, Férias ou Dias Normais)
   const lancarPontoManual = async (e) => {
     e.preventDefault(); 
     setCarregando(true);
@@ -370,12 +356,12 @@ export default function Dashboard() {
       
       <style>
         {`
-            /* Meu CSS blindado para a tela e impressão (Aqui fica a mágica Anti-Guilhotina no PDF) */
+            /* Meu CSS blindado para a tela e impressão */
             html, body { touch-action: pan-y; overscroll-behavior-y: none; -webkit-user-select: none; user-select: none; }
             input, select, textarea { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; }
 
             @media print {
-              @page { size: ${certificadoSelecionado ? 'A4 portrait' : 'A4 landscape'}; margin: 10mm; }
+              @page { size: ${certificadoSelecionado ? 'A4 portrait' : extratoSelecionado ? 'A4 portrait' : 'A4 landscape'}; margin: 10mm; }
               
               html, body, #root, main, .min-h-screen { 
                 background: white !important; 
@@ -422,6 +408,20 @@ export default function Dashboard() {
               .certificado-header { text-align: center !important; margin-bottom: 30px !important; }
               .certificado-body { line-height: 1.8 !important; font-size: 12px !important; margin-bottom: 30px !important; text-align: justify !important;}
               .certificado-hash { font-family: monospace !important; background: #f1f5f9 !important; padding: 15px !important; border: 1px solid #cbd5e1 !important; word-wrap: break-word !important; font-size: 10px !important; }
+
+              /* === AQUI É A MÁGICA: MODO HOLERITE COMPACTO PARA CABER TUDO EM 1 PÁGINA === */
+              .extrato-compacto .pdf-title { font-size: 16px !important; margin-bottom: 2px !important; padding-bottom: 4px !important; }
+              .extrato-compacto .pdf-subtitle { margin-bottom: 8px !important; font-size: 10px !important; }
+              .extrato-compacto .pdf-section { margin-top: 8px !important; padding-bottom: 2px !important; margin-bottom: 4px !important; font-size: 10px !important; }
+              .extrato-compacto .pdf-table { margin-top: 4px !important; }
+              /* Comprimo as células ao máximo para os 31 dias caberem sem vazar a folha */
+              .extrato-compacto .pdf-table th { padding: 4px 6px !important; font-size: 9px !important; }
+              .extrato-compacto .pdf-table td { padding: 4px 6px !important; font-size: 10px !important; }
+              .extrato-compacto .pdf-box { margin-top: 8px !important; padding: 6px 12px !important; }
+              /* O quadro de assinatura digital fica menorzinho pra caber no rodapé */
+              .extrato-compacto .carimbo-assinatura { margin-top: 15px !important; padding: 10px !important; }
+              .extrato-compacto .carimbo-assinatura h4 { margin-bottom: 4px !important; font-size: 11px !important; }
+              .extrato-compacto .carimbo-assinatura p { margin-top: 2px !important; font-size: 9px !important; line-height: 1.2 !important; }
             }
         `}
       </style>
@@ -429,7 +429,7 @@ export default function Dashboard() {
       {/* ÁREA DE MODAIS (Minhas sobreposições na tela) */}
       <div className="modais-extracao">
         
-        {/*  GESTÃO DE EQUIPE = */}
+        {/* MODAL: GESTÃO DE EQUIPE */}
         {modalEquipeAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-3xl p-6 md:p-8 shadow-2xl relative max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95">
@@ -569,7 +569,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Meu modal de lançamento manual reformulado */}
+        {/* Modal de lançamento manual */}
         {modalAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
@@ -595,7 +595,6 @@ export default function Dashboard() {
                   </select>
                 </div>
                 
-                {/* Minha correção de responsividade da data */}
                 <div className="flex flex-col sm:flex-row gap-4">
                   <div className="flex-1">
                     <label className="text-xs text-slate-400 mb-1 block">Data Início</label>
@@ -607,7 +606,6 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Se for trabalho normal, peço a Obra e a Hora. Se for Férias/Folga, eu oculto isso! */}
                 {formManual.tipo_lancamento === 'normal' && (
                   <div className="animate-in fade-in slide-in-from-top-2 flex flex-col gap-4">
                     <div>
@@ -840,12 +838,12 @@ export default function Dashboard() {
                 <p><strong>COORDENADA GEOGRÁFICA (GPS):</strong> {certificadoSelecionado.folha.gps_assinatura}</p>
               </div>
             </div>
-            <div style={{ marginTop: '40px' }}><p style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '5px' }}>Chave Criptográfico de Imutabilidade (Hash SHA-256):</p><div className="certificado-hash">{certificadoSelecionado.folha.hash_auditoria}</div></div>
+            <div style={{ marginTop: '40px' }}><p style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '5px' }}>Chave Criptográfica de Imutabilidade (Hash SHA-256):</p><div className="certificado-hash">{certificadoSelecionado.folha.hash_auditoria}</div></div>
           </div>
           
         /* EXTRATO INDIVIDUAL (AQUELE QUE O PEÃO RECEBE) */
         ) : extratoSelecionado ? (
-          <div>
+          <div className="extrato-compacto">
             <h1 className="pdf-title">DEMONSTRATIVO INDIVIDUAL DE JORNADA</h1>
             <p className="pdf-subtitle">Competência Fiscal: <strong>{mesFiltro.split('-')[1]}/{mesFiltro.split('-')[0]}</strong></p>
             <div className="pdf-section">1. Dados do Colaborador</div>
@@ -894,7 +892,7 @@ export default function Dashboard() {
             
             {/* O Carimbo bonitão provando que já está assinado */}
             {extratoSelecionado.folha?.status === 'assinado' && (
-              <div style={{ marginTop: '30px', padding: '15px', border: '2px solid #10b981', borderRadius: '8px', backgroundColor: '#ecfdf5', color: '#065f46' }}>
+              <div className="carimbo-assinatura" style={{ marginTop: '30px', padding: '15px', border: '2px solid #10b981', borderRadius: '8px', backgroundColor: '#ecfdf5', color: '#065f46' }}>
                 <h4 style={{ margin: '0 0 10px 0', textTransform: 'uppercase', fontSize: '12px' }}>✓ Documento Assinado Eletronicamente</h4>
                 <p style={{ margin: '0', fontSize: '10px' }}><strong>Assinante:</strong> {extratoSelecionado.nome} (CPF cadastrado no sistema)</p>
                 <p style={{ margin: '5px 0 0 0', fontSize: '10px' }}><strong>Data/Hora:</strong> {new Date(extratoSelecionado.folha.data_assinatura).toLocaleString('pt-BR')}</p>

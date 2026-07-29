@@ -20,12 +20,16 @@ export default function BaterPonto() {
   const [obraSelecionadaId, setObraSelecionadaId] = useState('');
   const [dropdownAberto, setDropdownAberto] = useState(false);
   
+  // === ATUALIZADO: Agora suporta o status 'especial' para Folgas e Férias ===
   const [jornadaAtual, setJornadaAtual] = useState({ status: 'livre', pontoEntradaGps: null, bloqueadoPorHoje: false, obraNomeAtual: '' });
   const [fazendoUpload, setFazendoUpload] = useState(false);
 
   const mesAtual = new Date().toISOString().slice(0, 7); 
   const [mesFiltro, setMesFiltro] = useState(mesAtual);
+  
+  // === NOVO: Estados para o Dashboard do Funcionário ===
   const [meusRegistros, setMeusRegistros] = useState([]);
+  const [resumoMensalApp, setResumoMensalApp] = useState(null);
   const [carregandoRegistros, setCarregandoRegistros] = useState(false);
 
   const [folhasPendentes, setFolhasPendentes] = useState([]);
@@ -54,7 +58,7 @@ export default function BaterPonto() {
     if (abaAtiva === 'registros') buscarHistoricoMensal();
   }, [abaAtiva, mesFiltro, perfil.id]);
 
-  // Função que puxa quem é o cara que está com o celular na mão
+  // Minha função que lê o dia de hoje e entende se o peão está trabalhando, de folga ou em casa
   const carregarDadosDoFuncionario = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -71,17 +75,31 @@ export default function BaterPonto() {
 
     if (historico && historico.length > 0) {
       const ultimaAcao = historico[0];
-      if (ultimaAcao.tipo_registro === 'entrada') {
-        setJornadaAtual({ status: 'trabalhando', pontoEntradaGps: ultimaAcao.localizacao_gps, bloqueadoPorHoje: false, obraNomeAtual: ultimaAcao.obra_nome });
-        if (obrasData && ultimaAcao.obra_nome) {
-          const obraMatch = obrasData.find(o => o.nome === ultimaAcao.obra_nome);
-          if (obraMatch) setObraSelecionadaId(obraMatch.id);
+      const dataAcaoLocal = new Date(ultimaAcao.data_hora).toLocaleDateString('pt-BR');
+      const dataHojeLocal = new Date().toLocaleDateString('pt-BR');
+
+      // Se a última batida foi hoje, eu decifro o que aconteceu
+      if (dataAcaoLocal === dataHojeLocal) {
+        
+        // Se o nome da obra for especial, ele tá de Folga/Férias/Viagem
+        if (['FOLGA', 'FÉRIAS', 'VIAGEM'].includes(ultimaAcao.obra_nome)) {
+           setJornadaAtual({ status: 'especial', bloqueadoPorHoje: true, obraNomeAtual: ultimaAcao.obra_nome });
+        } 
+        // Se bateu saída num dia normal, ele terminou o dia
+        else if (ultimaAcao.tipo_registro === 'saida') {
+           setJornadaAtual({ status: 'livre', bloqueadoPorHoje: true, obraNomeAtual: '' });
+        } 
+        // Se bateu entrada, está trabalhando
+        else {
+           setJornadaAtual({ status: 'trabalhando', pontoEntradaGps: ultimaAcao.localizacao_gps, bloqueadoPorHoje: false, obraNomeAtual: ultimaAcao.obra_nome });
+           if (obrasData && ultimaAcao.obra_nome) {
+             const obraMatch = obrasData.find(o => o.nome === ultimaAcao.obra_nome);
+             if (obraMatch) setObraSelecionadaId(obraMatch.id);
+           }
         }
-      } else if (ultimaAcao.tipo_registro === 'saida') {
-        const dataSaidaLocal = new Date(ultimaAcao.data_hora).toLocaleDateString('pt-BR');
-        const dataHojeLocal = new Date().toLocaleDateString('pt-BR');
-        if (dataSaidaLocal === dataHojeLocal) setJornadaAtual({ status: 'livre', bloqueadoPorHoje: true, obraNomeAtual: '' });
-        else setJornadaAtual({ status: 'livre', bloqueadoPorHoje: false, obraNomeAtual: '' });
+      } else {
+        // Se a última batida for de ontem, o dia de hoje está livre e zerado
+        setJornadaAtual({ status: 'livre', bloqueadoPorHoje: false, obraNomeAtual: '' });
       }
     } else {
       setJornadaAtual({ status: 'livre', bloqueadoPorHoje: false, obraNomeAtual: '' });
@@ -93,6 +111,7 @@ export default function BaterPonto() {
     if (data) setFolhasPendentes(data);
   };
 
+  // === NOVO: Minha função matemática que constrói o MiniDashboard do App ===
   const buscarHistoricoMensal = async () => {
     if (!perfil.id) return;
     setCarregandoRegistros(true);
@@ -103,15 +122,70 @@ export default function BaterPonto() {
     const { data } = await supabase.from('registros_ponto').select('id, tipo_registro, data_hora, localizacao_gps, obra_nome').eq('funcionario_id', perfil.id).gte('data_hora', dataInicio).lte('data_hora', dataFim).order('data_hora', { ascending: false });
 
     if (data) {
-      const agrupado = {};
+      const agrupadoVisual = {};
+      const diasParaCalculo = {};
+
       data.forEach(ponto => {
         const dataObj = new Date(ponto.data_hora);
-        const dataStr = dataObj.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+        const dataStrVisual = dataObj.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+        const dataKeyMath = dataObj.toLocaleDateString('pt-BR');
         const horaStr = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        if (!agrupado[dataStr]) agrupado[dataStr] = [];
-        agrupado[dataStr].push({ ...ponto, horaFormatada: horaStr });
+        
+        // === 1. Lógica Visual (Lista de Registros) ===
+        if (!agrupadoVisual[dataStrVisual]) agrupadoVisual[dataStrVisual] = [];
+        
+        if (['FOLGA', 'FÉRIAS', 'VIAGEM'].includes(ponto.obra_nome)) {
+           // Para folgas, eu coloco apenas 1 item na lista visual, para não poluir com Entrada e Saída falsas
+           if (!agrupadoVisual[dataStrVisual].some(p => p.isEspecial)) {
+              agrupadoVisual[dataStrVisual].push({ id: ponto.id, isEspecial: ponto.obra_nome });
+           }
+        } else {
+           agrupadoVisual[dataStrVisual].push({ ...ponto, horaFormatada: horaStr, isEspecial: false });
+        }
+
+        // === 2. Lógica Matemática (Para o Dashboard) ===
+        if (!diasParaCalculo[dataKeyMath]) diasParaCalculo[dataKeyMath] = { entrada: null, saida: null, isEspecial: false, obra: ponto.obra_nome || 'Base' };
+        
+        if (['FOLGA', 'FÉRIAS', 'VIAGEM'].includes(ponto.obra_nome)) {
+           diasParaCalculo[dataKeyMath].isEspecial = true;
+        }
+
+        if (ponto.tipo_registro === 'entrada') diasParaCalculo[dataKeyMath].entrada = ponto.data_hora;
+        if (ponto.tipo_registro === 'saida') diasParaCalculo[dataKeyMath].saida = ponto.data_hora;
       });
-      setMeusRegistros(Object.entries(agrupado));
+
+      // === 3. A Matemática (Exatamente igual ao painel do Gestor) ===
+      let totalMins = 0;
+      let folgasAcumuladas = 0;
+      const obrasAcumuladas = {};
+
+      Object.values(diasParaCalculo).forEach(dia => {
+         if (dia.isEspecial) {
+            folgasAcumuladas++;
+         } else if (dia.entrada && dia.saida) {
+            const dtEnt = new Date(dia.entrada);
+            const dtSai = new Date(dia.saida);
+            let mins = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
+            
+            // O Desconto de 1 Hora do Gestor, implementado no app
+            if (mins >= 60) mins -= 60; else mins = 0;
+            
+            totalMins += mins;
+
+            const nomeObra = dia.obra;
+            if (!obrasAcumuladas[nomeObra]) obrasAcumuladas[nomeObra] = 0;
+            obrasAcumuladas[nomeObra] += mins;
+         }
+      });
+
+      // Fecho o pacote de dados do MiniDashboard
+      setResumoMensalApp({
+         horasFormatadas: `${Math.floor(totalMins / 60)}h ${(totalMins % 60).toString().padStart(2, '0')}m`,
+         diasEspeciais: folgasAcumuladas,
+         obras: Object.entries(obrasAcumuladas).map(([nome, m]) => ({ nome, horasFormatadas: `${Math.floor(m / 60)}h ${(m % 60).toString().padStart(2, '0')}m` }))
+      });
+
+      setMeusRegistros(Object.entries(agrupadoVisual));
     }
     setCarregandoRegistros(false);
   };
@@ -140,7 +214,6 @@ export default function BaterPonto() {
 
         if (!dias[dataLocal]) dias[dataLocal] = { data: dataLocal, entrada: null, saida: null, totalDia: 0, obra: ponto.obra_nome || 'Base', isEspecial: false };
         
-        // Pega se for Folga, Férias ou Viagem pra tratar diferente no modal de assinar
         if (['FOLGA', 'FÉRIAS', 'VIAGEM'].includes(ponto.obra_nome)) {
           dias[dataLocal].isEspecial = ponto.obra_nome;
         }
@@ -157,7 +230,6 @@ export default function BaterPonto() {
           const dtSai = new Date(dia.saida.raw);
           let mins = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
           
-          // O mesmo desconto automático de 1h
           if (mins >= 60) {
             mins -= 60;
           } else {
@@ -226,7 +298,7 @@ export default function BaterPonto() {
     );
   };
 
-  // Minha fórmula matemática (Haversine) para o Geofence não deixar bater ponto fora da obra
+  // Minha fórmula matemática (Haversine) para o Geofence
   const calcularDistanciaEmMetros = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3; const rad = Math.PI / 180;
     const a = Math.sin((lat2 - lat1) * rad / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin((lon2 - lon1) * rad / 2) ** 2;
@@ -235,12 +307,12 @@ export default function BaterPonto() {
 
   // Onde o ponto realmente acontece
   const registrar = useCallback(async (tipoRegistro: 'entrada' | 'saida') => {
-    if (jornadaAtual.bloqueadoPorHoje) { mostrarAviso('Jornada concluída! Novo registro liberado amanhã.'); return; }
+    if (jornadaAtual.bloqueadoPorHoje || jornadaAtual.status === 'especial') { mostrarAviso('Jornada bloqueada para registro hoje.'); return; }
     if (!obraSelecionadaId) { mostrarAviso('Erro: Selecione a Obra onde você está agora.'); return; }
 
     const horaLocal = new Date().getHours();
 
-    // Minhas travas de horário fixo da empresa
+    // Minhas travas de horário fixo
     if (tipoRegistro === 'entrada' && horaLocal >= 8) {
       mostrarAviso('Erro: Entrada bloqueada após as 08:00 da manhã. Fale com o Gestor.');
       return;
@@ -316,10 +388,10 @@ export default function BaterPonto() {
     return obrasList.find(o => o.id === obraSelecionadaId)?.nome || 'Obra Desconhecida';
   };
 
-  // Os bloqueadores que desativam os botões da tela inicial
+  // Os bloqueadores que desativam os botões da tela inicial (Aprimorados para os Dias Especiais)
   const horaLocalNum = horaAtual.getHours();
-  const bloqueiaEntrada = jornadaAtual.status === 'trabalhando' || jornadaAtual.bloqueadoPorHoje || horaLocalNum >= 8;
-  const bloqueiaSaida = jornadaAtual.bloqueadoPorHoje || horaLocalNum < 8;
+  const bloqueiaEntrada = jornadaAtual.status === 'trabalhando' || jornadaAtual.bloqueadoPorHoje || jornadaAtual.status === 'especial' || horaLocalNum >= 8;
+  const bloqueiaSaida = jornadaAtual.bloqueadoPorHoje || jornadaAtual.status === 'especial' || horaLocalNum < 8;
 
   return (
     <div className="h-screen bg-[#020617] font-['Inter'] text-slate-100 flex flex-col overflow-hidden relative">
@@ -353,9 +425,36 @@ export default function BaterPonto() {
           <div className="w-full max-w-sm mx-auto flex flex-col items-center pt-6 px-6">
             <div className="mb-6 text-center"><div className="font-['Montserrat'] text-5xl font-bold tracking-tight text-white drop-shadow-lg">{horaAtual.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}<span className="text-2xl text-slate-500 ml-1">{horaAtual.toLocaleTimeString('pt-BR', { second: '2-digit' })}</span></div></div>
             
-            <div className={`w-full p-4 rounded-2xl mb-6 flex items-center justify-center gap-3 border text-center shadow-lg ${jornadaAtual.bloqueadoPorHoje ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : jornadaAtual.status === 'trabalhando' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-800/50 border-slate-700 text-slate-400'}`}>{jornadaAtual.bloqueadoPorHoje ? ( <><Ban size={18} /><span className="text-sm font-semibold">Jornada Concluída.</span></> ) : jornadaAtual.status === 'trabalhando' ? ( <><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span><span className="text-sm font-semibold">Trabalhando na {jornadaAtual.obraNomeAtual || 'Base'}</span></> ) : ( <><CalendarClock size={18} /><span className="text-sm font-semibold">Aguardando início de turno.</span></> )}</div>
+            {/* O status gigante no topo da tela, agora superinteligente */}
+            <div className={`w-full p-4 rounded-2xl mb-6 flex items-center justify-center gap-3 border text-center shadow-lg 
+              ${jornadaAtual.status === 'especial' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' :
+                jornadaAtual.bloqueadoPorHoje ? 'bg-slate-800/50 border-slate-700/50 text-slate-400' : 
+                jornadaAtual.status === 'trabalhando' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-800/50 border-slate-700 text-slate-400'}`}>
+              
+              {jornadaAtual.status === 'especial' ? (
+                 <>
+                    <AlertCircle size={18} className="shrink-0" />
+                    <span className="text-sm font-semibold">Você está em {jornadaAtual.obraNomeAtual}. Aproveite!</span>
+                 </>
+              ) : jornadaAtual.bloqueadoPorHoje ? ( 
+                 <>
+                    <Ban size={18} className="shrink-0" />
+                    <span className="text-sm font-semibold">Jornada Concluída.</span>
+                 </> 
+              ) : jornadaAtual.status === 'trabalhando' ? ( 
+                 <>
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                    <span className="text-sm font-semibold truncate">Trabalhando na {jornadaAtual.obraNomeAtual || 'Base'}</span>
+                 </> 
+              ) : ( 
+                 <>
+                    <CalendarClock size={18} className="shrink-0" />
+                    <span className="text-sm font-semibold">Aguardando início de turno.</span>
+                 </> 
+              )}
+            </div>
             
-            {!jornadaAtual.bloqueadoPorHoje && (
+            {!jornadaAtual.bloqueadoPorHoje && jornadaAtual.status !== 'especial' && (
               <div className="w-full mb-6 relative z-30">
                 <button type="button" onClick={() => { if (jornadaAtual.status !== 'trabalhando') setDropdownAberto(!dropdownAberto); }} disabled={jornadaAtual.status === 'trabalhando'} className="w-full bg-[#0f172a] border border-blue-900/50 text-white text-sm font-semibold rounded-2xl py-4 px-4 flex justify-between items-center transition-colors shadow-lg disabled:opacity-70"><div className="flex items-center gap-3 truncate"><Building2 size={18} className="text-blue-400 shrink-0" /> <span className="truncate">{getNomeObraSelecionada()}</span></div><ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${dropdownAberto ? 'rotate-180' : ''}`} /></button>
                 {dropdownAberto && <div className="fixed inset-0 z-30" onClick={() => setDropdownAberto(false)}></div>}
@@ -378,7 +477,7 @@ export default function BaterPonto() {
               </div>
             </div>
 
-            {/* A tela onde eu agrupei Entrada e Saída lada a lado */}
+            {/* Botões Lado a Lado */}
             <div className="w-full flex gap-3">
               <button 
                 onClick={() => registrar('entrada')} 
@@ -407,6 +506,7 @@ export default function BaterPonto() {
               </button>
             </div>
 
+            {/* Mensagens Explicativas da Regra de Negócio (Só mostramos se for dia de trabalho) */}
             {horaLocalNum >= 8 && jornadaAtual.status === 'livre' && !jornadaAtual.bloqueadoPorHoje && (
               <div className="w-full mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-center gap-2 text-amber-500">
                 <AlertCircle size={16} />
@@ -427,17 +527,80 @@ export default function BaterPonto() {
         {abaAtiva === 'registros' && (
           <div className="w-full max-w-md mx-auto pt-6 px-4">
             <h2 className="text-xl font-bold mb-6 font-['Montserrat'] text-white">Meus Pontos</h2>
-            <div className="bg-[#0f172a] border border-slate-700 rounded-2xl p-4 mb-6"><label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Filtrar por Mês</label><input type="month" value={mesFiltro} onChange={(e) => setMesFiltro(e.target.value)} className="w-full bg-slate-900 border border-slate-700 text-slate-100 font-semibold p-3 rounded-xl outline-none focus:border-emerald-500 transition-colors [color-scheme:dark]" /></div>
-            {carregandoRegistros ? ( <div className="flex justify-center p-8"><Loader2 className="animate-spin text-emerald-500" size={32} /></div> ) : meusRegistros.length === 0 ? ( <div className="text-center p-8 bg-[#0f172a] border border-slate-800 rounded-2xl"><ClipboardList size={32} className="text-slate-600 mx-auto mb-3" /><span className="text-sm text-slate-400">Nenhum registro encontrado.</span></div> ) : (
+            
+            <div className="bg-[#0f172a] border border-slate-700 rounded-2xl p-4 mb-6">
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Filtrar por Mês</label>
+              <input type="month" value={mesFiltro} onChange={(e) => setMesFiltro(e.target.value)} className="w-full bg-slate-900 border border-slate-700 text-slate-100 font-semibold p-3 rounded-xl outline-none focus:border-emerald-500 transition-colors [color-scheme:dark]" />
+            </div>
+
+            {carregandoRegistros ? ( 
+              <div className="flex justify-center p-8"><Loader2 className="animate-spin text-emerald-500" size={32} /></div> 
+            ) : meusRegistros.length === 0 ? ( 
+              <div className="text-center p-8 bg-[#0f172a] border border-slate-800 rounded-2xl"><ClipboardList size={32} className="text-slate-600 mx-auto mb-3" /><span className="text-sm text-slate-400">Nenhum registro encontrado.</span></div> 
+            ) : (
               <div className="flex flex-col gap-4">
+                
+                {/* === O DASHBOARD DO PEÃO === */}
+                {resumoMensalApp && (
+                  <div className="mb-4 flex flex-col gap-4 animate-in fade-in">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-gradient-to-br from-blue-900/40 to-slate-900 border border-blue-500/30 p-4 rounded-2xl shadow-lg flex flex-col justify-center">
+                        <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider mb-1">Saldo Mensal</span>
+                        <span className="text-2xl font-black text-blue-400 font-mono">{resumoMensalApp.horasFormatadas}</span>
+                      </div>
+                      <div className="bg-gradient-to-br from-amber-900/40 to-slate-900 border border-amber-500/30 p-4 rounded-2xl shadow-lg flex flex-col justify-center">
+                        <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider mb-1">Ausências Rest.</span>
+                        <span className="text-2xl font-black text-amber-400 font-mono">{resumoMensalApp.diasEspeciais} <span className="text-sm text-amber-500 font-sans">dias</span></span>
+                      </div>
+                    </div>
+
+                    {/* Relatório de Obras Trabalhadas */}
+                    {resumoMensalApp.obras.length > 0 && (
+                      <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4 shadow-lg">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-3 flex items-center gap-1.5"><Building2 size={12}/> Horas Acumuladas por Local</span>
+                        <div className="flex flex-col gap-2">
+                          {resumoMensalApp.obras.map((ob, idx) => (
+                            <div key={idx} className="flex justify-between items-center bg-slate-900/50 p-3 rounded-xl border border-slate-800/50">
+                              <span className="text-xs font-medium text-slate-300 truncate pr-4">{ob.nome}</span>
+                              <span className="text-xs font-bold font-mono text-emerald-400 shrink-0">{ob.horasFormatadas}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="h-px bg-slate-800 my-2"></div>
+                  </div>
+                )}
+                {/* === FIM DO DASHBOARD DO PEÃO === */}
+
                 {meusRegistros.map(([data, pontos]) => (
                   <div key={data} className="bg-[#0f172a] border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
                     <div className="bg-slate-800/50 p-3 border-b border-slate-800 font-semibold text-sm text-slate-300 uppercase tracking-wide">{data}</div>
                     <div className="p-4 flex flex-col gap-3">
-                      {pontos.map(ponto => (
-                        <div key={ponto.id} className="flex justify-between items-center bg-slate-900/50 p-3 rounded-xl border border-slate-800/50">
-                          <div className="flex items-center gap-3"><div className={`p-2 rounded-lg ${ponto.tipo_registro === 'entrada' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-300'}`}>{ponto.tipo_registro === 'entrada' ? <LogIn size={18} /> : <LogOut size={18} />}</div><div><span className="block font-bold text-slate-200 capitalize">{ponto.tipo_registro}</span><span className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5"><MapPin size={10}/> {ponto.obra_nome || 'Base'}</span></div></div>
-                          <span className="font-mono text-lg font-bold text-slate-300">{ponto.horaFormatada}</span>
+                      {pontos.map((ponto, idx) => (
+                        <div key={idx} className="flex justify-between items-center bg-slate-900/50 p-3 rounded-xl border border-slate-800/50">
+                          
+                          {/* Se for uma folga eu exibo o badge limpo. Senão, exibo a Entrada/Saída normal */}
+                          {ponto.isEspecial ? (
+                             <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5"><AlertCircle size={14}/> {ponto.isEspecial} OFICIAL</span>
+                             </div>
+                          ) : (
+                             <>
+                               <div className="flex items-center gap-3">
+                                 <div className={`p-2 rounded-lg ${ponto.tipo_registro === 'entrada' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-300'}`}>
+                                    {ponto.tipo_registro === 'entrada' ? <LogIn size={18} /> : <LogOut size={18} />}
+                                 </div>
+                                 <div>
+                                    <span className="block font-bold text-slate-200 capitalize">{ponto.tipo_registro}</span>
+                                    <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5"><MapPin size={10}/> <span className="truncate max-w-[130px]">{ponto.obra_nome || 'Base'}</span></span>
+                                 </div>
+                               </div>
+                               <span className="font-mono text-lg font-bold text-slate-300">{ponto.horaFormatada}</span>
+                             </>
+                          )}
+                          
                         </div>
                       ))}
                     </div>
