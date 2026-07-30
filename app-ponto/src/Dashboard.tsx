@@ -45,7 +45,7 @@ export default function Dashboard() {
   const [buscandoEndereco, setBuscandoEndereco] = useState(false);
   const [resultadosBusca, setResultadosBusca] = useState([]); 
   
-  // meus novos estados de filtros e edição rápida
+  // meus estados de filtros e edição rápida
   const [filtroNome, setFiltroNome] = useState('');
   const [filtroData, setFiltroData] = useState('');
   const [editandoPonto, setEditandoPonto] = useState(false);
@@ -403,13 +403,16 @@ export default function Dashboard() {
   // minha lógica de filtragem da tabela geral e do pdf
   let pontosFiltrados = pontosAgrupados;
   if (filtroNome) {
-    pontosFiltrados = pontosFiltrados.filter(p => p.nome.toLowerCase().includes(filtroNome.toLowerCase()));
+    pontosFiltrados = pontosFiltrados.filter(p => p.nome === filtroNome);
   }
   if (filtroData) {
     const [y, m, d] = filtroData.split('-');
     const dataFormatada = `${d}/${m}/${y}`;
     pontosFiltrados = pontosFiltrados.filter(p => p.data === dataFormatada);
   }
+
+  // gero uma lista única apenas dos nomes que estão na tabela atual para o filtro
+  const nomesComPontos = Array.from(new Set(pontosAgrupados.map(p => p.nome))).sort();
 
   // variáveis para controlar os dias nas tabelas
   let dataAtualAgrupamento = null;
@@ -554,7 +557,7 @@ export default function Dashboard() {
               <div className="flex flex-col items-center mb-6 border-b border-slate-800 pb-6"><ShieldCheck size={48} className="text-emerald-500 mb-3" /><h2 className="text-2xl font-bold font-['Montserrat'] text-white text-center">Auditoria de Assinatura Eletrônica</h2><p className="text-sm text-slate-400">Laudo Técnico de Validade Jurídica (Lei 14.063/2020)</p></div>
               <div className="space-y-4 mb-8">
                 <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800"><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Assinado por</span><div className="flex justify-between items-center"><span className="text-lg font-bold text-slate-200">{certificadoSelecionado.nomeFuncionario}</span><span className="font-mono text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded border border-emerald-500/20">CPF: {certificadoSelecionado.cpfFuncionario}</span></div></div>
-                <div className="grid grid-cols-2 gap-4"><div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800"><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Competência (Folha)</span><span className="font-bold text-slate-200">{certificadoSelecionado.folha.mes_ano.split('-')[1]}/{certificadoSelecionado.folha.mes_ano.split('-')[0]}</span></div><div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800"><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Data da Assinatura</span><span className="font-bold text-slate-200">{new Date(certificadoSelecionado.folha.data_assinatura).toLocaleString('pt-BR')}</span></div></div>
+                <div className="grid grid-cols-2 gap-4"><div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800"><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Competência (Folha)</span><span className="font-bold text-slate-200">{certificadoSelecionado.folha.mes_ano.split('-')[1]}/{certificadoSelecionado.folha.mes_ano.split('-')[0]}</span></div><div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800"><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Data/Hora da Assinatura</span><span className="font-bold text-slate-200">{new Date(certificadoSelecionado.folha.data_assinatura).toLocaleString('pt-BR')}</span></div></div>
                 <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 space-y-2"><div><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-0.5">Rastreabilidade de Rede (IP)</span><span className="font-mono text-xs text-blue-400">{certificadoSelecionado.folha.ip_assinatura || 'Não registrado'}</span></div><div><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-0.5 mt-2">Coordenada GPS do Aceite</span><span className="font-mono text-xs text-blue-400">{certificadoSelecionado.folha.gps_assinatura || 'Não registrado'}</span></div></div>
                 <div className="bg-[#020617] p-4 rounded-xl border border-slate-700"><span className="block text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1 flex items-center gap-1.5"><Lock size={12}/> Hash Criptográfico (Imutabilidade)</span><span className="font-mono text-[10px] text-slate-300 break-all">{certificadoSelecionado.folha.hash_auditoria}</span></div>
               </div>
@@ -587,6 +590,7 @@ export default function Dashboard() {
                         <tr key={i} className="hover:bg-slate-800/30 transition-colors">
                           <td className="p-4 font-medium text-slate-200 whitespace-nowrap">{l.data}</td>
                           
+                          {/* meu condicional: se for folga ou férias mostro diferente */}
                           {l.isEspecial ? (
                             <>
                               <td className="p-4 text-xs font-bold text-amber-400 uppercase tracking-wider">{l.isEspecial}</td>
@@ -702,7 +706,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* restante dos modais da tela s */}
+        {/* restante dos modais da tela continuam intactos */}
         {modalObraAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-4xl p-6 md:p-8 shadow-2xl relative flex flex-col md:flex-row gap-8 max-h-[90vh] overflow-y-auto">
@@ -753,11 +757,11 @@ export default function Dashboard() {
             <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full md:w-auto">
               
               {/* meu novo botão de gestão de equipe aqui no topo */}
-              <button onClick={() => setModalEquipeAberto(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 font-bold text-sm rounded-xl transition-all shadow-sm"><Users size={18} /> Gestão de Equipe</button>
+              <button onClick={() => setModalEquipeAberto(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 font-bold text-sm rounded-xl transition-all shadow-sm"><Users size={18} /> Equipe</button>
               
-              <button onClick={fecharFolhaDoMes} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-emerald-900/30"><FileSignature size={18} /> Fechar Mês Geral</button>
-              <button onClick={() => { setFormManual({ funcionario_id: '', tipo_lancamento: 'normal', data_inicio: '', data_fim: '', hora_entrada: '07:00', hora_saida: '17:00', obra_nome: 'Lançamento Manual / Base' }); setEditandoPonto(false); setModalAberto(true); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700/60 font-semibold text-sm rounded-xl transition-all shadow-sm"><Plus size={18} /> Lançamento Manual</button>
-              <button onClick={() => setModalObraAberto(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 font-semibold text-sm rounded-xl transition-all shadow-sm"><Building2 size={18} />Gestão de  Obras</button>
+              <button onClick={fecharFolhaDoMes} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-emerald-900/30"><FileSignature size={18} /> Fechar Mês</button>
+              <button onClick={() => { setFormManual({ funcionario_id: '', tipo_lancamento: 'normal', data_inicio: '', data_fim: '', hora_entrada: '07:00', hora_saida: '17:00', obra_nome: 'Lançamento Manual / Base' }); setEditandoPonto(false); setModalAberto(true); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700/60 font-semibold text-sm rounded-xl transition-all shadow-sm"><Plus size={18} /> Lançamento</button>
+              <button onClick={() => setModalObraAberto(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 font-semibold text-sm rounded-xl transition-all shadow-sm"><Building2 size={18} /> Obras</button>
               <button onClick={() => { setExtratoSelecionado(null); setTimeout(() => window.print(), 100); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 font-semibold text-sm rounded-xl transition-all shadow-sm"><FileText size={18} /> PDF Geral</button>
             </div>
           </div>
@@ -831,11 +835,28 @@ export default function Dashboard() {
             <div className="flex flex-col sm:flex-row gap-4 p-5 border-b border-slate-800 bg-slate-900/50">
                <div className="flex-1">
                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Search size={14}/> Buscar Colaborador</label>
-                 <input type="text" placeholder="Digite o nome..." value={filtroNome} onChange={e => setFiltroNome(e.target.value)} className="w-full bg-[#020617] border border-slate-700 rounded-xl p-3 text-sm text-white focus:border-blue-500 outline-none transition-colors" />
+                 
+                 {/* menu dropdown inteligente que só exibe nomes que possuem pontos no mês */}
+                 <select value={filtroNome} onChange={e => setFiltroNome(e.target.value)} className="w-full bg-[#020617] border border-slate-700 rounded-xl p-3 text-sm text-white focus:border-blue-500 outline-none transition-colors">
+                   <option value="">Todos os Colaboradores</option>
+                   {nomesComPontos.map(nome => (
+                     <option key={nome} value={nome}>{nome}</option>
+                   ))}
+                 </select>
                </div>
+               
                <div className="flex-1">
                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Filter size={14}/> Filtrar por Data</label>
-                 <input type="date" value={filtroData} onChange={e => setFiltroData(e.target.value)} className="w-full bg-[#020617] border border-slate-700 rounded-xl p-3 text-sm text-white [color-scheme:dark] focus:border-blue-500 outline-none transition-colors" />
+                 <div className="flex gap-2">
+                   <input type="date" value={filtroData} onChange={e => setFiltroData(e.target.value)} className="w-full bg-[#020617] border border-slate-700 rounded-xl p-3 text-sm text-white [color-scheme:dark] focus:border-blue-500 outline-none transition-colors" />
+                   
+                   {/* botão x para limpar o filtro de data (corrige o bug nativo do celular) */}
+                   {filtroData && (
+                     <button onClick={() => setFiltroData('')} className="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-red-400 px-4 rounded-xl transition-colors flex items-center justify-center border border-slate-700" title="Limpar Filtro de Data">
+                       <X size={20} />
+                     </button>
+                   )}
+                 </div>
                </div>
             </div>
 
