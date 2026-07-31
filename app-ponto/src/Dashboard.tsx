@@ -142,19 +142,19 @@ export default function Dashboard() {
 
     const totaisMinutosMes = {};
 
-    // meu passo 2: aqui eu faço a matemática de descontos infalível
+    // meu passo 2: faço a matemática de descontos infalível
     Object.values(agrupamento).forEach(dia => {
       if (!totaisMinutosMes[dia.nome]) totaisMinutosMes[dia.nome] = 0;
 
-      // se for um dia de folga ou férias, ele não ganha nem perde horas e fica zero
+      // se for um dia de folga ou férias fica zero
       if (dia.isEspecial) {
         dia.minutosTrabalhadosDia = 0;
       } 
-      // se for um dia normal de trabalho, aplica a regra de horas
+      // se for um dia normal de trabalho aplica a regra
       else if (dia.entrada && dia.saida) {
         let minutos = Math.max(0, Math.floor((new Date(dia.saida.rawIso).getTime() - new Date(dia.entrada.rawIso).getTime()) / 60000));
         
-        // meu desconto de 1 hora automático de almoço
+        // meu desconto de 1 hora automático
         if (minutos >= 60) {
           minutos -= 60;
           dia.descontouAlmoco = true;
@@ -167,14 +167,21 @@ export default function Dashboard() {
       }
     });
 
-    const todosPontos = Object.values(agrupamento).reverse();
-    setPontosAgrupados(todosPontos);
+    // passo crucial: ordeno os dias de forma cronológica (do dia 01 ao dia 31)
+    const todosPontosCronologicos = Object.values(agrupamento).sort((a, b) => {
+      const [d1, m1, y1] = a.data.split('/');
+      const [d2, m2, y2] = b.data.split('/');
+      return new Date(`${y1}-${m1}-${d1}T00:00:00`).getTime() - new Date(`${y2}-${m2}-${d2}T00:00:00`).getTime();
+    });
+
+    setPontosAgrupados(todosPontosCronologicos);
     setDataMinimaLog(`01/${mes}/${ano}`);
     if (maiorDataEncontrada) setDataMaximaLog(maiorDataEncontrada.toLocaleDateString('pt-BR')); else setDataMaximaLog(`${mes}/${ano}`);
     
-    const resumo = Object.keys(totaisMinutosMes).map(nome => {
+    // crio o resumo agrupando por nome e injetando a lista de dias dentro de cada cara
+    const resumo = Object.keys(totaisMinutosMes).sort().map(nome => {
       const totalMins = totaisMinutosMes[nome];
-      const diasDoFuncionario = todosPontos.filter(p => p.nome === nome);
+      const diasDoFuncionario = todosPontosCronologicos.filter(p => p.nome === nome);
       return { nome, cargo: diasDoFuncionario[0]?.cargo || 'Não definido', totalMinutos: totalMins, horasFormatadas: `${Math.floor(totalMins / 60)}h ${(totalMins % 60).toString().padStart(2, '0')}m`, logs: diasDoFuncionario };
     });
     setResumoMensal(resumo);
@@ -183,7 +190,7 @@ export default function Dashboard() {
 
   // inicio do meu motor de gestão de equipe para promover e demitir
   const buscarEquipeCompleta = async () => {
-    // aqui eu puxo todo mundo, incluindo os admins, para podermos rebaixar se precisar
+    // puxo todo mundo para podermos rebaixar admins se precisar
     const { data } = await supabase.from('perfis').select('*').order('nome');
     if (data) setEquipeCompleta(data);
   };
@@ -211,14 +218,8 @@ export default function Dashboard() {
     if (!window.confirm(`⚠️ EXCLUSÃO DE CONTA ⚠️\n\nTem certeza que deseja EXCLUIR DEFINITIVAMENTE o colaborador ${membro.nome}?\n\nIsso apagará o acesso dele, todas as folhas de pagamento e todo o histórico de pontos dele do sistema. Esta ação não tem volta.`)) return;
 
     setCarregando(true);
-    
-    // cirurgia limpa: apago as folhas de pagamento dele primeiro
     await supabase.from('folhas_pagamento').delete().eq('funcionario_id', membro.id);
-    
-    // apago todo o histórico de pontos
     await supabase.from('registros_ponto').delete().eq('funcionario_id', membro.id);
-    
-    // mato o perfil dele no banco e ele perde todo acesso ao sistema
     const { error } = await supabase.from('perfis').delete().eq('id', membro.id);
 
     if (error) {
@@ -230,8 +231,6 @@ export default function Dashboard() {
     }
     setCarregando(false);
   };
-  // fim do meu motor de gestão de equipe
-
 
   // minhas funções de disparo em lote e individual para fechar a folha
   const fecharFolhaDoMes = async () => {
@@ -276,7 +275,6 @@ export default function Dashboard() {
 
   // inicio da minha função que preenche o modal para edição a jato
   const abrirEdicaoPonto = (linha) => {
-    // transformo a data de volta para o padrão que o input exige
     const [d, m, y] = linha.data.split('/');
     const dataIso = `${y}-${m}-${d}`;
 
@@ -285,7 +283,6 @@ export default function Dashboard() {
     else if (linha.isEspecial === 'FÉRIAS') tipo = 'ferias';
     else if (linha.isEspecial === 'VIAGEM') tipo = 'viagem';
 
-    // jogo os dados originais no formulário
     setFormManual({
       funcionario_id: linha.funcionario_id,
       tipo_lancamento: tipo,
@@ -314,7 +311,6 @@ export default function Dashboard() {
     const dataInicioIso = new Date(`${formManual.data_inicio}T00:00:00`).toISOString();
     const dataFimIso = new Date(`${formManual.data_fim || formManual.data_inicio}T23:59:59`).toISOString();
 
-    // verifico se já existe qualquer coisa lançada no período escolhido
     const { data: registrosExistentes } = await supabase
       .from('registros_ponto')
       .select('id')
@@ -322,11 +318,8 @@ export default function Dashboard() {
       .gte('data_hora', dataInicioIso)
       .lte('data_hora', dataFimIso);
 
-    // se tem registro faço o alerta de confirmação ajustado
     if (registrosExistentes && registrosExistentes.length > 0) {
       let mensagem = `⚠️ ATENÇÃO!\n\nJá existem registros para este colaborador dentro do período informado.\n\nDeseja SUBSTITUIR tudo o que estiver lançado nestes dias pelos novos dados?`;
-      
-      // se ele clicou no lápis eu mostro uma mensagem mais tranquila
       if (editandoPonto) {
         mensagem = `CONFIRMAÇÃO DE EDIÇÃO\n\nVocê está alterando os horários deste dia.\nDeseja salvar as novas informações e recalcular a jornada automaticamente?`;
       }
@@ -339,7 +332,6 @@ export default function Dashboard() {
       if (deleteError) { alert("Erro ao limpar os dias antigos: " + deleteError.message); setCarregando(false); return; }
     }
 
-    // agora eu crio um loop que vai montando os dias
     const batidasMassa = [];
     const parseDate = (d) => { const [y, m, day] = d.split('-'); return new Date(y, m - 1, day); };
     
@@ -349,21 +341,17 @@ export default function Dashboard() {
     while (currentDate <= endDate) {
       const dateStr = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
       
-      // se for trabalho comum crio entrada e saída
       if (formManual.tipo_lancamento === 'normal') {
         batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'entrada', data_hora: new Date(`${dateStr}T${formManual.hora_entrada}:00`).toISOString(), obra_nome: formManual.obra_nome });
         batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'saida', data_hora: new Date(`${dateStr}T${formManual.hora_saida}:00`).toISOString(), obra_nome: formManual.obra_nome });
       } else {
-        // se for especial eu finjo um ponto mas carimbo a obra como folga
         const label = formManual.tipo_lancamento === 'folga' ? 'FOLGA' : formManual.tipo_lancamento === 'ferias' ? 'FÉRIAS' : 'VIAGEM';
         batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'entrada', data_hora: new Date(`${dateStr}T00:00:00`).toISOString(), obra_nome: label });
         batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'saida', data_hora: new Date(`${dateStr}T00:00:00`).toISOString(), obra_nome: label });
       }
-      // pulo para o próximo dia do loop
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    // jogo tudo pro banco de uma vez só
     const { error } = await supabase.from('registros_ponto').insert(batidasMassa);
 
     if (!error) { 
@@ -375,7 +363,7 @@ export default function Dashboard() {
     setCarregando(false);
   };
 
-  // minha integração com a api da photon para achar o endereço
+  // minha integração com a api da photon
   const buscarCoordenadasPorEndereco = async () => {
     if (!formObra.buscaEndereco) return;
     setBuscandoEndereco(true);
@@ -400,23 +388,25 @@ export default function Dashboard() {
     await supabase.from('obras').delete().eq('id', idObra); buscarDados();
   };
 
-  // minha lógica de filtragem da tabela geral e do pdf
-  let pontosFiltrados = pontosAgrupados;
+  // === A MÁGICA DOS FILTROS E AGRUPAMENTOS ===
+  let resumoFiltrado = resumoMensal;
+
   if (filtroNome) {
-    pontosFiltrados = pontosFiltrados.filter(p => p.nome === filtroNome);
+    resumoFiltrado = resumoFiltrado.filter(r => r.nome === filtroNome);
   }
+
   if (filtroData) {
     const [y, m, d] = filtroData.split('-');
     const dataFormatada = `${d}/${m}/${y}`;
-    pontosFiltrados = pontosFiltrados.filter(p => p.data === dataFormatada);
+    // eu varro a lista, jogo fora os dias que não batem com o filtro, e se o cara não bateu ponto nesse dia ele some da lista
+    resumoFiltrado = resumoFiltrado.map(r => ({
+      ...r,
+      logs: r.logs.filter(l => l.data === dataFormatada)
+    })).filter(r => r.logs.length > 0);
   }
 
-  // gero uma lista única apenas dos nomes que estão na tabela atual para o filtro
-  const nomesComPontos = Array.from(new Set(pontosAgrupados.map(p => p.nome))).sort();
-
-  // variáveis para controlar os dias nas tabelas
-  let dataAtualAgrupamento = null;
-  let dataAtualImpressao = null;
+  // construo a lista de nomes apenas com a galera do mês atual para o select
+  const nomesComPontos = resumoMensal.map(r => r.nome);
 
   return (
     <div className="min-h-screen bg-[#020617] font-['Inter'] text-slate-100">
@@ -428,7 +418,7 @@ export default function Dashboard() {
             input, select, textarea { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; }
 
             @media print {
-              @page { size: ${certificadoSelecionado ? 'A4 portrait' : extratoSelecionado ? 'A4 portrait' : 'A4 landscape'}; margin: 10mm; }
+              @page { size: ${certificadoSelecionado ? 'A4 portrait' : extratoSelecionado ? 'A4 portrait' : 'A4 portrait'}; margin: 10mm; }
               
               html, body, #root, main, .min-h-screen { 
                 background: white !important; 
@@ -590,7 +580,6 @@ export default function Dashboard() {
                         <tr key={i} className="hover:bg-slate-800/30 transition-colors">
                           <td className="p-4 font-medium text-slate-200 whitespace-nowrap">{l.data}</td>
                           
-                          {/* meu condicional: se for folga ou férias mostro diferente */}
                           {l.isEspecial ? (
                             <>
                               <td className="p-4 text-xs font-bold text-amber-400 uppercase tracking-wider">{l.isEspecial}</td>
@@ -662,7 +651,6 @@ export default function Dashboard() {
                   </select>
                 </div>
                 
-                {/* minha correção de responsividade da data */}
                 <div className="flex flex-col sm:flex-row gap-4">
                   <div className="flex-1">
                     <label className="text-xs text-slate-400 mb-1 block">Data Início</label>
@@ -827,7 +815,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* a mágica visual acontece aqui com o espelho geral dividido por dias */}
+          {/* a mágica visual acontece aqui com o espelho geral dividido por funcionários */}
           <div className="bg-[#0f172a]/60 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
             <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/30"><h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Espelho de Ponto Geral Diário</h3></div>
             
@@ -850,7 +838,7 @@ export default function Dashboard() {
                  <div className="flex gap-2">
                    <input type="date" value={filtroData} onChange={e => setFiltroData(e.target.value)} className="w-full bg-[#020617] border border-slate-700 rounded-xl p-3 text-sm text-white [color-scheme:dark] focus:border-blue-500 outline-none transition-colors" />
                    
-                   {/* botão x para limpar o filtro de data (corrige o bug nativo do celular) */}
+                   {/* botão x para limpar o filtro de data corrigindo bug nativo do celular */}
                    {filtroData && (
                      <button onClick={() => setFiltroData('')} className="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-red-400 px-4 rounded-xl transition-colors flex items-center justify-center border border-slate-700" title="Limpar Filtro de Data">
                        <X size={20} />
@@ -864,7 +852,8 @@ export default function Dashboard() {
               <table className="w-full text-left border-collapse min-w-[950px]">
                 <thead>
                   <tr className="bg-slate-900/70 border-b border-slate-800">
-                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Colaborador / Obra</th>
+                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider w-24">Data</th>
+                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Obra / Local</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider w-32">Entrada</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider w-32">Intervalo</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider w-32">Saída</th>
@@ -873,30 +862,37 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/40">
-                  {pontosFiltrados.length === 0 ? (
-                    <tr><td colSpan="6" className="p-8 text-center text-slate-500">Nenhum registro encontrado para este filtro.</td></tr>
+                  {resumoFiltrado.length === 0 ? (
+                    <tr><td colSpan="7" className="p-8 text-center text-slate-500">Nenhum registro encontrado para este filtro.</td></tr>
                   ) : (
-                    pontosFiltrados.map((linha, index) => {
-                      // se mudou de dia eu crio um cabeçalho lindo para separar a tabela
-                      const novaData = dataAtualAgrupamento !== linha.data;
-                      if (novaData) dataAtualAgrupamento = linha.data;
-
-                      return (
-                        <React.Fragment key={index}>
-                          {novaData && (
-                            <tr className="bg-slate-800/80 border-y border-slate-700">
-                              <td colSpan="6" className="px-5 py-3 text-blue-400 font-bold uppercase tracking-wider text-xs">
-                                <div className="flex items-center gap-2"><Calendar size={14} /> Registros de {linha.data}</div>
-                              </td>
-                            </tr>
-                          )}
-                          <tr className="hover:bg-slate-800/50 transition-colors group">
+                    resumoFiltrado.map(func => (
+                      <React.Fragment key={func.nome}>
+                        
+                        {/* meu cabeçalho lindo que separa os funcionários */}
+                        <tr className="bg-blue-900/20 border-y border-blue-900/30">
+                          <td colSpan="7" className="px-5 py-3">
+                            <div className="flex justify-between items-center">
+                              <div className="flex items-center gap-2">
+                                 <User size={16} className="text-blue-400" />
+                                 <span className="font-bold text-blue-100 uppercase tracking-wider text-sm">{func.nome}</span>
+                                 <span className="text-xs text-blue-400/70 ml-2">• {func.cargo}</span>
+                              </div>
+                              <div className="text-sm font-mono font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded border border-emerald-500/20">
+                                 Total: {func.horasFormatadas}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                        
+                        {/* linhas com os dias de trabalho desse funcionário */}
+                        {func.logs.map(linha => (
+                          <tr key={linha.data} className="hover:bg-slate-800/50 transition-colors group">
+                            <td className="p-5 text-slate-300 font-bold whitespace-nowrap">{linha.data}</td>
                             <td className="p-5">
-                              <div className="font-medium text-slate-200 text-sm">{linha.nome}</div>
                               {linha.isEspecial ? (
-                                 <div className="text-[10px] text-amber-400 font-bold uppercase tracking-wider mt-1">{linha.isEspecial}</div>
+                                 <div className="text-xs text-amber-400 font-bold uppercase tracking-wider">{linha.isEspecial}</div>
                               ) : (
-                                 <div className="text-[10px] text-blue-400 font-medium flex items-center gap-1 mt-1"><Building2 size={10} /> {linha.entrada?.obra || linha.saida?.obra || 'Não especificada'}</div>
+                                 <div className="text-xs text-blue-400 font-medium flex items-center gap-1.5"><Building2 size={12} /> {linha.entrada?.obra || linha.saida?.obra || 'Não especificada'}</div>
                               )}
                             </td>
                             
@@ -929,9 +925,9 @@ export default function Dashboard() {
                                </button>
                             </td>
                           </tr>
-                        </React.Fragment>
-                      )
-                    })
+                        ))}
+                      </React.Fragment>
+                    ))
                   )}
                 </tbody>
               </table>
@@ -1026,49 +1022,46 @@ export default function Dashboard() {
             )}
           </div>
 
-        /* meu relatório geral com a tabela pdf acompanhando os filtros da tela */
+        /* meu relatório geral com a tabela pdf acompanhando os filtros da tela agrupado por funcionário */
         ) : (
           <div>
             <h1 className="pdf-title">RELATÓRIO GERENCIAL DE FECHAMENTO</h1>
             <p className="pdf-subtitle">Apuração do Sistema: <strong>{dataMinimaLog}</strong> até <strong>{dataMaximaLog}</strong></p>
-            <div className="pdf-section">1. Resumo Consolidado de Horas (Banco Mensal)</div>
-            <table className="pdf-table" style={{ marginTop: '5px', marginBottom: '20px' }}><thead><tr><th style={{ width: '50%' }}>Nome do Colaborador</th><th style={{ width: '30%' }}>Função Registrada</th><th style={{ width: '20%', textAlign: 'right' }}>Carga Horária Total</th></tr></thead><tbody>{resumoMensal.map((r, i) => ( <tr key={i}><td style={{ fontWeight: 'bold' }}>{r.nome}</td><td>{r.cargo}</td><td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '12px' }}>{r.horasFormatadas}</td></tr> ))}</tbody></table>
-            <div className="pdf-section">2. Espelho de Ponto Detalhado Geral</div>
+            
             <table className="pdf-table" style={{ marginTop: '5px' }}>
               <thead>
                 <tr>
-                  <th>Colaborador / Obra</th>
-                  <th>Entrada</th>
-                  <th>Intervalo</th>
-                  <th>Saída</th>
-                  <th style={{ textAlign: 'right' }}>Total Dia</th>
+                  <th style={{ whiteSpace: 'nowrap', width: '15%' }}>Data</th>
+                  <th style={{ width: '35%' }}>Obra Local</th>
+                  <th style={{ width: '10%' }}>Entrada</th>
+                  <th style={{ width: '20%' }}>Intervalo</th>
+                  <th style={{ width: '10%' }}>Saída</th>
+                  <th style={{ textAlign: 'right', width: '10%' }}>Total Dia</th>
                 </tr>
               </thead>
               <tbody>
-                {pontosFiltrados.map((linha, index) => {
-                  const novaData = dataAtualImpressao !== linha.data;
-                  if (novaData) dataAtualImpressao = linha.data;
+                {resumoFiltrado.map((func) => (
+                  <React.Fragment key={func.nome}>
+                    
+                    {/* cabeçalho escuro do funcionário e saldo no pdf */}
+                    <tr>
+                      <td colSpan="6" style={{ backgroundColor: '#e2e8f0', color: '#0f172a', fontWeight: 'bold', fontSize: '11px', paddingTop: '8px', paddingBottom: '8px', borderBottom: '1px solid #cbd5e1' }}>
+                        👤 {func.nome.toUpperCase()} &nbsp;|&nbsp; {func.cargo.toUpperCase()} <span style={{ float: 'right', color: '#059669' }}>TOTAL ACUMULADO: {func.horasFormatadas}</span>
+                      </td>
+                    </tr>
 
-                  return (
-                    <React.Fragment key={index}>
-                      {novaData && (
-                        <tr>
-                          <td colSpan="5" style={{ backgroundColor: '#f1f5f9', fontWeight: 'bold', fontSize: '10px', paddingTop: '10px', paddingBottom: '4px', borderBottom: '1px solid #cbd5e1' }}>
-                            📅 Registros de {linha.data}
-                          </td>
-                        </tr>
-                      )}
-                      <tr>
-                        <td style={{ fontWeight: 'bold' }}>
-                          {linha.nome}
+                    {/* lista dos dias cravados do funcionário */}
+                    {func.logs.map((linha, index) => (
+                      <tr key={index}>
+                        <td style={{ whiteSpace: 'nowrap', fontWeight: 'bold' }}>{linha.data}</td>
+                        <td>
                           {linha.isEspecial ? (
-                             <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: 'bold', textTransform: 'uppercase' }}>{linha.isEspecial}</div>
+                             <div style={{ fontSize: '10px', color: '#d97706', fontWeight: 'bold', textTransform: 'uppercase' }}>{linha.isEspecial}</div>
                           ) : (
-                             <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: 'normal' }}>{linha.entrada?.obra || linha.saida?.obra || ''}</div>
+                             <div style={{ fontSize: '10px', color: '#475569' }}>{linha.entrada?.obra || linha.saida?.obra || '-'}</div>
                           )}
                         </td>
                         
-                        {/* meu condicional se for dia de folga no pdf */}
                         {linha.isEspecial ? (
                           <>
                             <td style={{ textAlign: 'center', color: '#94a3b8' }}>-</td>
@@ -1087,9 +1080,9 @@ export default function Dashboard() {
                           </>
                         )}
                       </tr> 
-                    </React.Fragment>
-                  )
-                })}
+                    ))}
+                  </React.Fragment>
+                ))}
               </tbody>
             </table>
           </div>
