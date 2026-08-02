@@ -35,8 +35,9 @@ export default function Dashboard() {
   const [fotoExpandida, setFotoExpandida] = useState(null);
   const [modalAberto, setModalAberto] = useState(false); 
   const [modalObraAberto, setModalObraAberto] = useState(false); 
+  
+  // === ATUALIZADO: Usaremos o extratoSelecionado como o "Mega Modal" que abriga tanto as horas quanto o laudo ===
   const [extratoSelecionado, setExtratoSelecionado] = useState(null); 
-  const [certificadoSelecionado, setCertificadoSelecionado] = useState(null); 
   
   // meus estados da gestão de equipe
   const [modalEquipeAberto, setModalEquipeAberto] = useState(false);
@@ -112,6 +113,7 @@ export default function Dashboard() {
       const dataLocal = dataObj.toLocaleDateString('pt-BR');
       const horaLocal = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const nomeFuncionario = ponto.perfis?.nome || 'Desconhecido';
+      const cpfFuncionario = ponto.perfis?.cpf || ''; // Injeto o CPF aqui para usar no Laudo
       const cargoFuncionario = ponto.perfis?.funcao || 'Não definida';
       const chave = `${nomeFuncionario}-${dataLocal}`;
 
@@ -121,6 +123,7 @@ export default function Dashboard() {
         agrupamento[chave] = { 
           funcionario_id: ponto.funcionario_id, 
           nome: nomeFuncionario, 
+          cpf: cpfFuncionario,
           cargo: cargoFuncionario, 
           data: dataLocal, 
           entrada: null, 
@@ -142,19 +145,19 @@ export default function Dashboard() {
 
     const totaisMinutosMes = {};
 
-    // meu passo 2: aqui eu faço a matemática de descontos infalível
+    // meu passo 2: faço a matemática de descontos infalível
     Object.values(agrupamento).forEach(dia => {
       if (!totaisMinutosMes[dia.nome]) totaisMinutosMes[dia.nome] = 0;
 
-      // se for um dia de folga ou férias, ele não ganha nem perde horas e fica zero
+      // se for um dia de folga ou férias fica zero
       if (dia.isEspecial) {
         dia.minutosTrabalhadosDia = 0;
       } 
-      // se for um dia normal de trabalho, aplica a regra de horas
+      // se for um dia normal de trabalho aplica a regra
       else if (dia.entrada && dia.saida) {
         let minutos = Math.max(0, Math.floor((new Date(dia.saida.rawIso).getTime() - new Date(dia.entrada.rawIso).getTime()) / 60000));
         
-        // meu desconto de 1 hora automático de almoço
+        // meu desconto de 1 hora automático
         if (minutos >= 60) {
           minutos -= 60;
           dia.descontouAlmoco = true;
@@ -167,15 +170,29 @@ export default function Dashboard() {
       }
     });
 
-    const todosPontos = Object.values(agrupamento).reverse();
-    setPontosAgrupados(todosPontos);
+    // ordeno os dias de forma cronológica
+    const todosPontosCronologicos = Object.values(agrupamento).sort((a, b) => {
+      const [d1, m1, y1] = a.data.split('/');
+      const [d2, m2, y2] = b.data.split('/');
+      return new Date(`${y1}-${m1}-${d1}T00:00:00`).getTime() - new Date(`${y2}-${m2}-${d2}T00:00:00`).getTime();
+    });
+
+    setPontosAgrupados(todosPontosCronologicos);
     setDataMinimaLog(`01/${mes}/${ano}`);
     if (maiorDataEncontrada) setDataMaximaLog(maiorDataEncontrada.toLocaleDateString('pt-BR')); else setDataMaximaLog(`${mes}/${ano}`);
     
-    const resumo = Object.keys(totaisMinutosMes).map(nome => {
+    // crio o resumo agrupando por nome
+    const resumo = Object.keys(totaisMinutosMes).sort().map(nome => {
       const totalMins = totaisMinutosMes[nome];
-      const diasDoFuncionario = todosPontos.filter(p => p.nome === nome);
-      return { nome, cargo: diasDoFuncionario[0]?.cargo || 'Não definido', totalMinutos: totalMins, horasFormatadas: `${Math.floor(totalMins / 60)}h ${(totalMins % 60).toString().padStart(2, '0')}m`, logs: diasDoFuncionario };
+      const diasDoFuncionario = todosPontosCronologicos.filter(p => p.nome === nome);
+      return { 
+        nome, 
+        cpf: diasDoFuncionario[0]?.cpf || '', // Injeto o CPF no pacote final
+        cargo: diasDoFuncionario[0]?.cargo || 'Não definido', 
+        totalMinutos: totalMins, 
+        horasFormatadas: `${Math.floor(totalMins / 60)}h ${(totalMins % 60).toString().padStart(2, '0')}m`, 
+        logs: diasDoFuncionario 
+      };
     });
     setResumoMensal(resumo);
     setCarregando(false);
@@ -183,7 +200,7 @@ export default function Dashboard() {
 
   // inicio do meu motor de gestão de equipe para promover e demitir
   const buscarEquipeCompleta = async () => {
-    // aqui eu puxo todo mundo, incluindo os admins, para podermos rebaixar se precisar
+    // puxo todo mundo para podermos rebaixar admins se precisar
     const { data } = await supabase.from('perfis').select('*').order('nome');
     if (data) setEquipeCompleta(data);
   };
@@ -211,14 +228,8 @@ export default function Dashboard() {
     if (!window.confirm(`⚠️ EXCLUSÃO DE CONTA ⚠️\n\nTem certeza que deseja EXCLUIR DEFINITIVAMENTE o colaborador ${membro.nome}?\n\nIsso apagará o acesso dele, todas as folhas de pagamento e todo o histórico de pontos dele do sistema. Esta ação não tem volta.`)) return;
 
     setCarregando(true);
-    
-    // cirurgia limpa: apago as folhas de pagamento dele primeiro
     await supabase.from('folhas_pagamento').delete().eq('funcionario_id', membro.id);
-    
-    // apago todo o histórico de pontos
     await supabase.from('registros_ponto').delete().eq('funcionario_id', membro.id);
-    
-    // mato o perfil dele no banco e ele perde todo acesso ao sistema
     const { error } = await supabase.from('perfis').delete().eq('id', membro.id);
 
     if (error) {
@@ -230,8 +241,6 @@ export default function Dashboard() {
     }
     setCarregando(false);
   };
-  // fim do meu motor de gestão de equipe
-
 
   // minhas funções de disparo em lote e individual para fechar a folha
   const fecharFolhaDoMes = async () => {
@@ -276,7 +285,6 @@ export default function Dashboard() {
 
   // inicio da minha função que preenche o modal para edição a jato
   const abrirEdicaoPonto = (linha) => {
-    // transformo a data de volta para o padrão que o input exige
     const [d, m, y] = linha.data.split('/');
     const dataIso = `${y}-${m}-${d}`;
 
@@ -285,7 +293,6 @@ export default function Dashboard() {
     else if (linha.isEspecial === 'FÉRIAS') tipo = 'ferias';
     else if (linha.isEspecial === 'VIAGEM') tipo = 'viagem';
 
-    // jogo os dados originais no formulário
     setFormManual({
       funcionario_id: linha.funcionario_id,
       tipo_lancamento: tipo,
@@ -314,7 +321,6 @@ export default function Dashboard() {
     const dataInicioIso = new Date(`${formManual.data_inicio}T00:00:00`).toISOString();
     const dataFimIso = new Date(`${formManual.data_fim || formManual.data_inicio}T23:59:59`).toISOString();
 
-    // verifico se já existe qualquer coisa lançada no período escolhido
     const { data: registrosExistentes } = await supabase
       .from('registros_ponto')
       .select('id')
@@ -322,11 +328,8 @@ export default function Dashboard() {
       .gte('data_hora', dataInicioIso)
       .lte('data_hora', dataFimIso);
 
-    // se tem registro faço o alerta de confirmação ajustado
     if (registrosExistentes && registrosExistentes.length > 0) {
       let mensagem = `⚠️ ATENÇÃO!\n\nJá existem registros para este colaborador dentro do período informado.\n\nDeseja SUBSTITUIR tudo o que estiver lançado nestes dias pelos novos dados?`;
-      
-      // se ele clicou no lápis eu mostro uma mensagem mais tranquila
       if (editandoPonto) {
         mensagem = `CONFIRMAÇÃO DE EDIÇÃO\n\nVocê está alterando os horários deste dia.\nDeseja salvar as novas informações e recalcular a jornada automaticamente?`;
       }
@@ -339,7 +342,6 @@ export default function Dashboard() {
       if (deleteError) { alert("Erro ao limpar os dias antigos: " + deleteError.message); setCarregando(false); return; }
     }
 
-    // agora eu crio um loop que vai montando os dias
     const batidasMassa = [];
     const parseDate = (d) => { const [y, m, day] = d.split('-'); return new Date(y, m - 1, day); };
     
@@ -349,21 +351,17 @@ export default function Dashboard() {
     while (currentDate <= endDate) {
       const dateStr = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
       
-      // se for trabalho comum crio entrada e saída
       if (formManual.tipo_lancamento === 'normal') {
         batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'entrada', data_hora: new Date(`${dateStr}T${formManual.hora_entrada}:00`).toISOString(), obra_nome: formManual.obra_nome });
         batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'saida', data_hora: new Date(`${dateStr}T${formManual.hora_saida}:00`).toISOString(), obra_nome: formManual.obra_nome });
       } else {
-        // se for especial eu finjo um ponto mas carimbo a obra como folga
         const label = formManual.tipo_lancamento === 'folga' ? 'FOLGA' : formManual.tipo_lancamento === 'ferias' ? 'FÉRIAS' : 'VIAGEM';
         batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'entrada', data_hora: new Date(`${dateStr}T00:00:00`).toISOString(), obra_nome: label });
         batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'saida', data_hora: new Date(`${dateStr}T00:00:00`).toISOString(), obra_nome: label });
       }
-      // pulo para o próximo dia do loop
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    // jogo tudo pro banco de uma vez só
     const { error } = await supabase.from('registros_ponto').insert(batidasMassa);
 
     if (!error) { 
@@ -375,7 +373,7 @@ export default function Dashboard() {
     setCarregando(false);
   };
 
-  // minha integração com a api da photon para achar o endereço
+  // minha integração com a api da photon
   const buscarCoordenadasPorEndereco = async () => {
     if (!formObra.buscaEndereco) return;
     setBuscandoEndereco(true);
@@ -401,22 +399,23 @@ export default function Dashboard() {
   };
 
   // minha lógica de filtragem da tabela geral e do pdf
-  let pontosFiltrados = pontosAgrupados;
+  let resumoFiltrado = resumoMensal;
+
   if (filtroNome) {
-    pontosFiltrados = pontosFiltrados.filter(p => p.nome === filtroNome);
+    resumoFiltrado = resumoFiltrado.filter(r => r.nome === filtroNome);
   }
+
   if (filtroData) {
     const [y, m, d] = filtroData.split('-');
     const dataFormatada = `${d}/${m}/${y}`;
-    pontosFiltrados = pontosFiltrados.filter(p => p.data === dataFormatada);
+    // eu varro a lista e jogo fora os dias que não batem com o filtro
+    resumoFiltrado = resumoFiltrado.map(r => ({
+      ...r,
+      logs: r.logs.filter(l => l.data === dataFormatada)
+    })).filter(r => r.logs.length > 0);
   }
 
-  // gero uma lista única apenas dos nomes que estão na tabela atual para o filtro
-  const nomesComPontos = Array.from(new Set(pontosAgrupados.map(p => p.nome))).sort();
-
-  // variáveis para controlar os dias nas tabelas
-  let dataAtualAgrupamento = null;
-  let dataAtualImpressao = null;
+  const nomesComPontos = resumoMensal.map(r => r.nome);
 
   return (
     <div className="min-h-screen bg-[#020617] font-['Inter'] text-slate-100">
@@ -428,7 +427,7 @@ export default function Dashboard() {
             input, select, textarea { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; }
 
             @media print {
-              @page { size: ${certificadoSelecionado ? 'A4 portrait' : extratoSelecionado ? 'A4 portrait' : 'A4 landscape'}; margin: 10mm; }
+              @page { size: ${extratoSelecionado ? 'A4 portrait' : 'A4 portrait'}; margin: 10mm; }
               
               html, body, #root, main, .min-h-screen { 
                 background: white !important; 
@@ -476,7 +475,8 @@ export default function Dashboard() {
               .certificado-body { line-height: 1.8 !important; font-size: 12px !important; margin-bottom: 30px !important; text-align: justify !important;}
               .certificado-hash { font-family: monospace !important; background: #f1f5f9 !important; padding: 15px !important; border: 1px solid #cbd5e1 !important; word-wrap: break-word !important; font-size: 10px !important; }
 
-              /* a mágica da paginação e modo holerite compacto */
+              /* a mágica da paginação para o modo unificado (Extrato + Laudo no mesmo PDF) */
+              .extrato-compacto { page-break-after: always; break-after: page; } /* Obriga o laudo a pular para a folha 2 */
               .extrato-compacto .pdf-title { font-size: 16px !important; margin-bottom: 2px !important; padding-bottom: 4px !important; }
               .extrato-compacto .pdf-subtitle { margin-bottom: 8px !important; font-size: 10px !important; }
               .extrato-compacto .pdf-section { margin-top: 8px !important; padding-bottom: 2px !important; margin-bottom: 4px !important; font-size: 10px !important; }
@@ -484,9 +484,6 @@ export default function Dashboard() {
               .extrato-compacto .pdf-table th { padding: 4px 6px !important; font-size: 9px !important; }
               .extrato-compacto .pdf-table td { padding: 4px 6px !important; font-size: 10px !important; }
               .extrato-compacto .pdf-box { margin-top: 8px !important; padding: 6px 12px !important; }
-              .extrato-compacto .carimbo-assinatura { margin-top: 15px !important; padding: 10px !important; }
-              .extrato-compacto .carimbo-assinatura h4 { margin-bottom: 4px !important; font-size: 11px !important; }
-              .extrato-compacto .carimbo-assinatura p { margin-top: 2px !important; font-size: 9px !important; line-height: 1.2 !important; }
             }
         `}
       </style>
@@ -550,26 +547,21 @@ export default function Dashboard() {
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"><div className="relative max-w-xl w-full flex flex-col items-center"><button onClick={() => setFotoExpandida(null)} className="absolute -top-12 right-0 p-3 bg-slate-800 hover:bg-slate-700 rounded-full text-white z-50"><X size={24} /></button><img src={fotoExpandida} alt="Auditoria" className="w-full h-auto max-h-[80vh] object-cover rounded-2xl border-4 border-slate-700" /></div></div>
         )}
 
-        {certificadoSelecionado && (
-          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
-            <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-2xl p-8 shadow-2xl relative">
-              <button onClick={() => setCertificadoSelecionado(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-2 hover:bg-slate-800 rounded-lg transition-colors"><X size={24} /></button>
-              <div className="flex flex-col items-center mb-6 border-b border-slate-800 pb-6"><ShieldCheck size={48} className="text-emerald-500 mb-3" /><h2 className="text-2xl font-bold font-['Montserrat'] text-white text-center">Auditoria de Assinatura Eletrônica</h2><p className="text-sm text-slate-400">Laudo Técnico de Validade Jurídica (Lei 14.063/2020)</p></div>
-              <div className="space-y-4 mb-8">
-                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800"><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Assinado por</span><div className="flex justify-between items-center"><span className="text-lg font-bold text-slate-200">{certificadoSelecionado.nomeFuncionario}</span><span className="font-mono text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded border border-emerald-500/20">CPF: {certificadoSelecionado.cpfFuncionario}</span></div></div>
-                <div className="grid grid-cols-2 gap-4"><div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800"><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Competência (Folha)</span><span className="font-bold text-slate-200">{certificadoSelecionado.folha.mes_ano.split('-')[1]}/{certificadoSelecionado.folha.mes_ano.split('-')[0]}</span></div><div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800"><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Data/Hora da Assinatura</span><span className="font-bold text-slate-200">{new Date(certificadoSelecionado.folha.data_assinatura).toLocaleString('pt-BR')}</span></div></div>
-                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 space-y-2"><div><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-0.5">Rastreabilidade de Rede (IP)</span><span className="font-mono text-xs text-blue-400">{certificadoSelecionado.folha.ip_assinatura || 'Não registrado'}</span></div><div><span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-0.5 mt-2">Coordenada GPS do Aceite</span><span className="font-mono text-xs text-blue-400">{certificadoSelecionado.folha.gps_assinatura || 'Não registrado'}</span></div></div>
-                <div className="bg-[#020617] p-4 rounded-xl border border-slate-700"><span className="block text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1 flex items-center gap-1.5"><Lock size={12}/> Hash Criptográfico (Imutabilidade)</span><span className="font-mono text-[10px] text-slate-300 break-all">{certificadoSelecionado.folha.hash_auditoria}</span></div>
-              </div>
-              <div className="flex gap-4"><button onClick={() => setCertificadoSelecionado(null)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 rounded-xl transition-colors">Voltar</button><button onClick={() => window.print()} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-blue-900/20 flex justify-center items-center gap-2"><FileText size={18}/> Imprimir Laudo</button></div>
-            </div>
-          </div>
-        )}
-
+        {/* === ATUALIZADO: O MEGA MODAL UNIFICADO (EXTRATO + LAUDO NA MESMA TELA) === */}
         {extratoSelecionado && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
-            <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-3xl p-6 md:p-8 shadow-2xl relative max-h-[95vh] overflow-y-auto custom-scrollbar">
-              <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4"><h2 className="text-xl md:text-2xl font-bold font-['Montserrat'] text-white">Demonstrativo Individual</h2><button onClick={() => setExtratoSelecionado(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-3 rounded-xl hover:bg-slate-800 transition-colors z-50"><X size={24} /></button></div>
+            <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-4xl p-6 md:p-8 shadow-2xl relative max-h-[95vh] overflow-y-auto custom-scrollbar">
+              <button onClick={() => setExtratoSelecionado(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-3 rounded-xl hover:bg-slate-800 transition-colors z-50"><X size={24} /></button>
+              
+              {/* Cabeçalho do Modal Unificado */}
+              <div className="flex items-center gap-3 mb-6 border-b border-slate-800 pb-4">
+                 <FileText size={28} className="text-blue-400" />
+                 <div>
+                    <h2 className="text-xl md:text-2xl font-bold font-['Montserrat'] text-white">Documento Oficial de Jornada</h2>
+                    <p className="text-xs text-slate-400">Extrato Mensal e Laudo de Assinatura (Lei 14.063/2020)</p>
+                 </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 bg-slate-900/50 p-5 rounded-2xl border border-slate-800 mt-2"><div><span className="block text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Colaborador</span><span className="font-bold text-slate-200 text-lg">{extratoSelecionado.nome}</span></div><div><span className="block text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Função / Cargo</span><span className="font-bold text-slate-200 text-lg">{extratoSelecionado.cargo}</span></div></div>
               
               <div className="border border-slate-800 rounded-2xl overflow-hidden mb-6 shadow-lg">
@@ -616,20 +608,56 @@ export default function Dashboard() {
                   </table>
                 </div>
               </div>
-              <div className="flex justify-between items-center bg-gradient-to-r from-slate-900 to-[#0f172a] p-5 rounded-2xl border border-blue-900/30 mb-8 shadow-inner"><span className="text-sm font-bold text-slate-400 uppercase tracking-wider">Saldo Acumulado:</span><span className="text-3xl font-black text-blue-400 font-mono">{extratoSelecionado.horasFormatadas}</span></div>
               
+              {/* Minha caixa de Saldo */}
+              <div className="flex justify-between items-center bg-gradient-to-r from-slate-900 to-[#0f172a] p-5 rounded-2xl border border-blue-900/30 mb-8 shadow-inner">
+                 <span className="text-sm font-bold text-slate-400 uppercase tracking-wider">Saldo Acumulado:</span>
+                 <span className="text-3xl font-black text-blue-400 font-mono">{extratoSelecionado.horasFormatadas}</span>
+              </div>
+              
+              {/* O LAUDO TÉCNICO VEM LOGO EM SEGUIDA DENTRO DO MESMO MODAL */}
               {extratoSelecionado.folha?.status === 'assinado' && (
-                <div className="mb-8 p-5 bg-emerald-950/30 border-2 border-emerald-500/50 rounded-xl flex items-start gap-4">
-                  <Fingerprint size={40} className="text-emerald-500 shrink-0" />
-                  <div>
-                    <h4 className="text-emerald-400 font-bold uppercase tracking-wider text-sm mb-1">Documento Assinado Eletronicamente</h4>
-                    <p className="text-xs text-slate-300 mb-1">Assinado por <strong className="text-white">{extratoSelecionado.nome}</strong> no dia {new Date(extratoSelecionado.folha.data_assinatura).toLocaleString('pt-BR')}.</p>
-                    <p className="text-[10px] text-slate-500 font-mono break-all mt-2">Hash da Transação: {extratoSelecionado.folha.hash_auditoria}</p>
+                <div className="mb-8 p-6 bg-slate-900/50 border border-slate-700 rounded-2xl">
+                  <div className="flex flex-col items-center mb-6 border-b border-slate-800 pb-6">
+                     <ShieldCheck size={40} className="text-emerald-500 mb-2" />
+                     <h3 className="text-xl font-bold font-['Montserrat'] text-emerald-400 text-center uppercase tracking-wider">Laudo de Autenticidade</h3>
+                     <p className="text-xs text-slate-400 mt-1">O documento acima foi conferido e assinado digitalmente pelo colaborador.</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                     <div className="bg-[#020617] p-4 rounded-xl border border-slate-800">
+                        <span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">CPF do Assinante</span>
+                        <span className="font-mono text-slate-200">{extratoSelecionado.folha.perfis?.cpf || extratoSelecionado.cpf || 'Não registrado'}</span>
+                     </div>
+                     <div className="bg-[#020617] p-4 rounded-xl border border-slate-800">
+                        <span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Data/Hora da Assinatura</span>
+                        <span className="font-bold text-slate-200">{new Date(extratoSelecionado.folha.data_assinatura).toLocaleString('pt-BR')}</span>
+                     </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                     <div className="bg-[#020617] p-4 rounded-xl border border-slate-800">
+                        <span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Rastreamento IP</span>
+                        <span className="font-mono text-xs text-blue-400">{extratoSelecionado.folha.ip_assinatura || 'Não registrado'}</span>
+                     </div>
+                     <div className="bg-[#020617] p-4 rounded-xl border border-slate-800">
+                        <span className="block text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Coordenada GPS do Aceite</span>
+                        <span className="font-mono text-xs text-blue-400">{extratoSelecionado.folha.gps_assinatura || 'Não registrado'}</span>
+                     </div>
+                  </div>
+
+                  <div className="bg-[#020617] p-4 rounded-xl border border-emerald-900/50">
+                     <span className="block text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1 flex items-center gap-1.5"><Lock size={12}/> Hash Criptográfico (Imutabilidade)</span>
+                     <span className="font-mono text-[10px] text-emerald-400/80 break-all">{extratoSelecionado.folha.hash_auditoria}</span>
                   </div>
                 </div>
               )}
 
-              <div className="flex flex-col sm:flex-row gap-3"><button onClick={() => setExtratoSelecionado(null)} className="w-full sm:w-auto px-6 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 rounded-xl transition-all border border-slate-700"><ArrowLeft size={20} /> Voltar</button><button onClick={() => window.print()} className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-blue-900/20"><FileText size={20} /> Imprimir PDF</button><button onClick={() => enviarExtratoIndividualWhats(extratoSelecionado)} className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-emerald-900/20"><Send size={20} /> Enviar p/ WhatsApp</button></div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                 <button onClick={() => setExtratoSelecionado(null)} className="w-full sm:w-auto px-6 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 rounded-xl transition-all border border-slate-700"><ArrowLeft size={20} /> Voltar</button>
+                 <button onClick={() => window.print()} className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-blue-900/20"><FileText size={20} /> Baixar PDF Unificado</button>
+                 <button onClick={() => enviarExtratoIndividualWhats(extratoSelecionado)} className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-emerald-900/20"><Send size={20} /> Enviar p/ WhatsApp</button>
+              </div>
             </div>
           </div>
         )}
@@ -756,7 +784,6 @@ export default function Dashboard() {
             <div><h1 className="font-['Montserrat'] text-2xl md:text-3xl font-bold text-white mb-1">Painel de Fechamento</h1><p className="text-slate-400 text-sm">Gestão de horas, equipe e auditoria de assinaturas.</p></div>
             <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full md:w-auto">
               
-              {/* meu novo botão de gestão de equipe aqui no topo */}
               <button onClick={() => setModalEquipeAberto(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 font-bold text-sm rounded-xl transition-all shadow-sm"><Users size={18} /> Equipe</button>
               
               <button onClick={fecharFolhaDoMes} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-emerald-900/30"><FileSignature size={18} /> Fechar Mês</button>
@@ -804,14 +831,14 @@ export default function Dashboard() {
                                   </button>
                                 )}
 
+                                {/* === ATUALIZADO: O BOTÃO UNIFICADO === */}
                                 {resumo && (
-                                  <button onClick={() => setExtratoSelecionado({ ...resumo, folha: folhaDB })} title={folhaDB?.status === 'assinado' ? "Ver Folha Assinada" : "Ver Espelho Mensal"} className={`px-3 py-2 text-xs font-bold rounded-lg transition-colors flex items-center gap-2 ${folhaDB?.status === 'assinado' ? 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}`}>
-                                    <FileText size={14} /> {folhaDB?.status === 'assinado' ? 'Folha Assinada' : 'Ver Folha'}
-                                  </button>
-                                )}
-                                {folhaDB?.status === 'assinado' && (
-                                  <button onClick={() => setCertificadoSelecionado({ folha: folhaDB, nomeFuncionario: func.nome, cpfFuncionario: func.cpf })} title="Ver Laudo Técnico de Auditoria" className="px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/30 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors flex items-center gap-2 shadow-sm">
-                                    <ShieldCheck size={14} /> Laudo
+                                  <button 
+                                    onClick={() => setExtratoSelecionado({ ...resumo, folha: folhaDB })} 
+                                    title={folhaDB?.status === 'assinado' ? "Ver Documento Completo (Folha + Laudo)" : "Ver Espelho Mensal"} 
+                                    className={`px-3 py-2 text-xs font-bold rounded-lg transition-colors flex items-center gap-2 shadow-sm ${folhaDB?.status === 'assinado' ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}`}
+                                  >
+                                    <FileText size={14} /> {folhaDB?.status === 'assinado' ? 'Folha Oficial Assinada' : 'Ver Espelho Provisório'}
                                   </button>
                                 )}
                               </div>
@@ -827,7 +854,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* a mágica visual acontece aqui com o espelho geral dividido por dias */}
+          {/* a mágica visual acontece aqui com o espelho geral dividido por funcionários */}
           <div className="bg-[#0f172a]/60 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
             <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/30"><h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Espelho de Ponto Geral Diário</h3></div>
             
@@ -836,7 +863,6 @@ export default function Dashboard() {
                <div className="flex-1">
                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Search size={14}/> Buscar Colaborador</label>
                  
-                 {/* menu dropdown inteligente que só exibe nomes que possuem pontos no mês */}
                  <select value={filtroNome} onChange={e => setFiltroNome(e.target.value)} className="w-full bg-[#020617] border border-slate-700 rounded-xl p-3 text-sm text-white focus:border-blue-500 outline-none transition-colors">
                    <option value="">Todos os Colaboradores</option>
                    {nomesComPontos.map(nome => (
@@ -850,7 +876,6 @@ export default function Dashboard() {
                  <div className="flex gap-2">
                    <input type="date" value={filtroData} onChange={e => setFiltroData(e.target.value)} className="w-full bg-[#020617] border border-slate-700 rounded-xl p-3 text-sm text-white [color-scheme:dark] focus:border-blue-500 outline-none transition-colors" />
                    
-                   {/* botão x para limpar o filtro de data (corrige o bug nativo do celular) */}
                    {filtroData && (
                      <button onClick={() => setFiltroData('')} className="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-red-400 px-4 rounded-xl transition-colors flex items-center justify-center border border-slate-700" title="Limpar Filtro de Data">
                        <X size={20} />
@@ -864,7 +889,8 @@ export default function Dashboard() {
               <table className="w-full text-left border-collapse min-w-[950px]">
                 <thead>
                   <tr className="bg-slate-900/70 border-b border-slate-800">
-                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Colaborador / Obra</th>
+                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider w-24">Data</th>
+                    <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider">Obra / Local</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider w-32">Entrada</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider w-32">Intervalo</th>
                     <th className="p-5 text-slate-400 text-xs font-semibold uppercase tracking-wider w-32">Saída</th>
@@ -873,34 +899,38 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/40">
-                  {pontosFiltrados.length === 0 ? (
-                    <tr><td colSpan="6" className="p-8 text-center text-slate-500">Nenhum registro encontrado para este filtro.</td></tr>
+                  {resumoFiltrado.length === 0 ? (
+                    <tr><td colSpan="7" className="p-8 text-center text-slate-500">Nenhum registro encontrado para este filtro.</td></tr>
                   ) : (
-                    pontosFiltrados.map((linha, index) => {
-                      // se mudou de dia eu crio um cabeçalho lindo para separar a tabela
-                      const novaData = dataAtualAgrupamento !== linha.data;
-                      if (novaData) dataAtualAgrupamento = linha.data;
-
-                      return (
-                        <React.Fragment key={index}>
-                          {novaData && (
-                            <tr className="bg-slate-800/80 border-y border-slate-700">
-                              <td colSpan="6" className="px-5 py-3 text-blue-400 font-bold uppercase tracking-wider text-xs">
-                                <div className="flex items-center gap-2"><Calendar size={14} /> Registros de {linha.data}</div>
-                              </td>
-                            </tr>
-                          )}
-                          <tr className="hover:bg-slate-800/50 transition-colors group">
+                    resumoFiltrado.map(func => (
+                      <React.Fragment key={func.nome}>
+                        
+                        <tr className="bg-blue-900/20 border-y border-blue-900/30">
+                          <td colSpan="7" className="px-5 py-3">
+                            <div className="flex justify-between items-center">
+                              <div className="flex items-center gap-2">
+                                 <User size={16} className="text-blue-400" />
+                                 <span className="font-bold text-blue-100 uppercase tracking-wider text-sm">{func.nome}</span>
+                                 <span className="text-xs text-blue-400/70 ml-2">• {func.cargo}</span>
+                              </div>
+                              <div className="text-sm font-mono font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded border border-emerald-500/20">
+                                 Total: {func.horasFormatadas}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                        
+                        {func.logs.map((linha, index) => (
+                          <tr key={index} className="hover:bg-slate-800/50 transition-colors group">
+                            <td className="p-5 text-slate-300 font-bold whitespace-nowrap">{linha.data}</td>
                             <td className="p-5">
-                              <div className="font-medium text-slate-200 text-sm">{linha.nome}</div>
                               {linha.isEspecial ? (
-                                 <div className="text-[10px] text-amber-400 font-bold uppercase tracking-wider mt-1">{linha.isEspecial}</div>
+                                 <div className="text-xs text-amber-400 font-bold uppercase tracking-wider">{linha.isEspecial}</div>
                               ) : (
-                                 <div className="text-[10px] text-blue-400 font-medium flex items-center gap-1 mt-1"><Building2 size={10} /> {linha.entrada?.obra || linha.saida?.obra || 'Não especificada'}</div>
+                                 <div className="text-xs text-blue-400 font-medium flex items-center gap-1.5"><Building2 size={12} /> {linha.entrada?.obra || linha.saida?.obra || 'Não especificada'}</div>
                               )}
                             </td>
                             
-                            {/* meu condicional na tela geral se for folga ou férias */}
                             {linha.isEspecial ? (
                               <>
                                 <td className="p-5 text-slate-600">-</td>
@@ -922,16 +952,15 @@ export default function Dashboard() {
                                 </td>
                               </>
                             )}
-                            {/* meu botão mágico de edição */}
                             <td className="p-5 text-right">
                                <button onClick={() => abrirEdicaoPonto(linha)} title="Editar os horários deste dia" className="p-2.5 bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-white rounded-lg transition-colors opacity-50 group-hover:opacity-100">
                                   <Pencil size={16} />
                                </button>
                             </td>
                           </tr>
-                        </React.Fragment>
-                      )
-                    })
+                        ))}
+                      </React.Fragment>
+                    ))
                   )}
                 </tbody>
               </table>
@@ -940,34 +969,14 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* meus layouts de impressão em pdf */}
+      {/* === MEUS LAYOUTS DE IMPRESSÃO EM PDF === */}
       <div className="hidden print:block area-impressao font-sans text-black">
         
-        {/* meu laudo técnico de auditoria */}
-        {certificadoSelecionado ? (
-          <div className="certificado-container">
-            <div className="certificado-header">
-              <h1 style={{ fontFamily: 'Montserrat, sans-serif', fontSize: '24px', fontWeight: '900', borderBottom: '2px solid black', paddingBottom: '10px', marginBottom: '10px' }}>CERTIFICADO DE ASSINATURA ELETRÔNICA</h1>
-              <p style={{ fontSize: '12px', fontWeight: 'bold' }}>Documento de validade jurídica amparado pela Medida Provisória nº 2.200-2/2001 e Lei 14.063/2020.</p>
-            </div>
-            <div className="certificado-body">
-              <p>O presente documento certifica, para todos os fins de direito e comprovação junto a Justiça do Trabalho, que o colaborador abaixo identificado validou, conferiu e <strong>ASSINOU ELETRONICAMENTE</strong> o espelho de controle de jornada (Folha de Ponto) referente à competência descrita.</p>
-              <div style={{ marginTop: '30px', padding: '20px', border: '1px solid #ccc', background: '#f9f9f9' }}>
-                <p><strong>COLABORADOR:</strong> {certificadoSelecionado.nomeFuncionario}</p>
-                <p><strong>CPF DO ASSINANTE:</strong> {certificadoSelecionado.cpfFuncionario}</p>
-                <p><strong>COMPETÊNCIA DA FOLHA:</strong> {certificadoSelecionado.folha.mes_ano}</p>
-                <hr style={{ margin: '15px 0' }}/>
-                <p><strong>DATA E HORA DO ACEITE:</strong> {new Date(certificadoSelecionado.folha.data_assinatura).toLocaleString('pt-BR')}</p>
-                <p><strong>RASTREAMENTO DE REDE (IP):</strong> {certificadoSelecionado.folha.ip_assinatura}</p>
-                <p><strong>COORDENADA GEOGRÁFICA (GPS):</strong> {certificadoSelecionado.folha.gps_assinatura}</p>
-              </div>
-            </div>
-            <div style={{ marginTop: '40px' }}><p style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '5px' }}>Chave Criptográfica de Imutabilidade (Hash SHA-256):</p><div className="certificado-hash">{certificadoSelecionado.folha.hash_auditoria}</div></div>
-          </div>
-          
-        /* meu extrato individual que o funcionário recebe */
-        ) : extratoSelecionado ? (
+        {/* === ATUALIZADO: MEU EXTRATO UNIFICADO (PÁGINA 1 = HORAS | PÁGINA 2 = LAUDO) === */}
+        {extratoSelecionado ? (
           <div className="extrato-compacto">
+            
+            {/* PÁGINA 1: O Extrato de Horas */}
             <h1 className="pdf-title">DEMONSTRATIVO INDIVIDUAL DE JORNADA</h1>
             <p className="pdf-subtitle">Competência Fiscal: <strong>{mesFiltro.split('-')[1]}/{mesFiltro.split('-')[0]}</strong></p>
             <div className="pdf-section">1. Dados do Colaborador</div>
@@ -1014,61 +1023,70 @@ export default function Dashboard() {
             </table>
             <div className="pdf-box"><span style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '11px' }}>Saldo Acumulado:</span><span style={{ fontSize: '14px', fontWeight: 'bold', fontFamily: 'monospace' }}>{extratoSelecionado.horasFormatadas}</span></div>
             
-            {/* meu carimbo provando que já está assinado */}
+            {/* PÁGINA 2: O Laudo Técnico de Assinatura (A mágica do page-break do CSS joga isso para a folha de baixo) */}
             {extratoSelecionado.folha?.status === 'assinado' && (
-              <div className="carimbo-assinatura" style={{ marginTop: '30px', padding: '15px', border: '2px solid #10b981', borderRadius: '8px', backgroundColor: '#ecfdf5', color: '#065f46' }}>
-                <h4 style={{ margin: '0 0 10px 0', textTransform: 'uppercase', fontSize: '12px' }}>✓ Documento Assinado Eletronicamente</h4>
-                <p style={{ margin: '0', fontSize: '10px' }}><strong>Assinante:</strong> {extratoSelecionado.nome} (CPF cadastrado no sistema)</p>
-                <p style={{ margin: '5px 0 0 0', fontSize: '10px' }}><strong>Data/Hora:</strong> {new Date(extratoSelecionado.folha.data_assinatura).toLocaleString('pt-BR')}</p>
-                <p style={{ margin: '5px 0 0 0', fontSize: '10px' }}><strong>Chave de Autenticidade (Hash):</strong> {extratoSelecionado.folha.hash_auditoria}</p>
-                <p style={{ margin: '5px 0 0 0', fontSize: '10px' }}><strong>Auditoria Completa:</strong> Ver Laudo Técnico anexo.</p>
+              <div className="laudo-pagina-2" style={{ pageBreakBefore: 'always', paddingTop: '10mm' }}>
+                <div className="certificado-container">
+                  <div className="certificado-header">
+                    <h1 style={{ fontFamily: 'Montserrat, sans-serif', fontSize: '24px', fontWeight: '900', borderBottom: '2px solid black', paddingBottom: '10px', marginBottom: '10px' }}>CERTIFICADO DE ASSINATURA ELETRÔNICA</h1>
+                    <p style={{ fontSize: '12px', fontWeight: 'bold' }}>Documento de validade jurídica amparado pela Medida Provisória nº 2.200-2/2001 e Lei 14.063/2020.</p>
+                  </div>
+                  <div className="certificado-body">
+                    <p>O presente documento certifica, para todos os fins de direito e comprovação junto a Justiça do Trabalho, que o colaborador abaixo identificado validou, conferiu e <strong>ASSINOU ELETRONICAMENTE</strong> o espelho de controle de jornada (Folha de Ponto) referente à competência descrita.</p>
+                    <div style={{ marginTop: '30px', padding: '20px', border: '1px solid #ccc', background: '#f9f9f9' }}>
+                      <p><strong>COLABORADOR:</strong> {extratoSelecionado.nome}</p>
+                      <p><strong>CPF DO ASSINANTE:</strong> {extratoSelecionado.folha.perfis?.cpf || extratoSelecionado.cpf || 'Não registrado'}</p>
+                      <p><strong>COMPETÊNCIA DA FOLHA:</strong> {extratoSelecionado.folha.mes_ano}</p>
+                      <hr style={{ margin: '15px 0' }}/>
+                      <p><strong>DATA E HORA DO ACEITE:</strong> {new Date(extratoSelecionado.folha.data_assinatura).toLocaleString('pt-BR')}</p>
+                      <p><strong>RASTREAMENTO DE REDE (IP):</strong> {extratoSelecionado.folha.ip_assinatura}</p>
+                      <p><strong>COORDENADA GEOGRÁFICA (GPS):</strong> {extratoSelecionado.folha.gps_assinatura}</p>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: '40px' }}><p style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '5px' }}>Chave Criptográfica de Imutabilidade (Hash SHA-256):</p><div className="certificado-hash">{extratoSelecionado.folha.hash_auditoria}</div></div>
+                </div>
               </div>
             )}
           </div>
 
-        /* meu relatório geral com a tabela pdf acompanhando os filtros da tela */
+        /* meu relatório geral com a tabela pdf acompanhando os filtros da tela agrupado por funcionário */
         ) : (
           <div>
             <h1 className="pdf-title">RELATÓRIO GERENCIAL DE FECHAMENTO</h1>
             <p className="pdf-subtitle">Apuração do Sistema: <strong>{dataMinimaLog}</strong> até <strong>{dataMaximaLog}</strong></p>
-            <div className="pdf-section">1. Resumo Consolidado de Horas (Banco Mensal)</div>
-            <table className="pdf-table" style={{ marginTop: '5px', marginBottom: '20px' }}><thead><tr><th style={{ width: '50%' }}>Nome do Colaborador</th><th style={{ width: '30%' }}>Função Registrada</th><th style={{ width: '20%', textAlign: 'right' }}>Carga Horária Total</th></tr></thead><tbody>{resumoMensal.map((r, i) => ( <tr key={i}><td style={{ fontWeight: 'bold' }}>{r.nome}</td><td>{r.cargo}</td><td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '12px' }}>{r.horasFormatadas}</td></tr> ))}</tbody></table>
-            <div className="pdf-section">2. Espelho de Ponto Detalhado Geral</div>
+            
             <table className="pdf-table" style={{ marginTop: '5px' }}>
               <thead>
                 <tr>
-                  <th>Colaborador / Obra</th>
-                  <th>Entrada</th>
-                  <th>Intervalo</th>
-                  <th>Saída</th>
-                  <th style={{ textAlign: 'right' }}>Total Dia</th>
+                  <th style={{ whiteSpace: 'nowrap', width: '15%' }}>Data</th>
+                  <th style={{ width: '35%' }}>Obra Local</th>
+                  <th style={{ width: '10%' }}>Entrada</th>
+                  <th style={{ width: '20%' }}>Intervalo</th>
+                  <th style={{ width: '10%' }}>Saída</th>
+                  <th style={{ textAlign: 'right', width: '10%' }}>Total Dia</th>
                 </tr>
               </thead>
               <tbody>
-                {pontosFiltrados.map((linha, index) => {
-                  const novaData = dataAtualImpressao !== linha.data;
-                  if (novaData) dataAtualImpressao = linha.data;
+                {resumoFiltrado.map((func) => (
+                  <React.Fragment key={func.nome}>
+                    
+                    <tr>
+                      <td colSpan="6" style={{ backgroundColor: '#e2e8f0', color: '#0f172a', fontWeight: 'bold', fontSize: '11px', paddingTop: '8px', paddingBottom: '8px', borderBottom: '1px solid #cbd5e1' }}>
+                        👤 {func.nome.toUpperCase()} &nbsp;|&nbsp; {func.cargo.toUpperCase()} <span style={{ float: 'right', color: '#059669' }}>TOTAL ACUMULADO: {func.horasFormatadas}</span>
+                      </td>
+                    </tr>
 
-                  return (
-                    <React.Fragment key={index}>
-                      {novaData && (
-                        <tr>
-                          <td colSpan="5" style={{ backgroundColor: '#f1f5f9', fontWeight: 'bold', fontSize: '10px', paddingTop: '10px', paddingBottom: '4px', borderBottom: '1px solid #cbd5e1' }}>
-                            📅 Registros de {linha.data}
-                          </td>
-                        </tr>
-                      )}
-                      <tr>
-                        <td style={{ fontWeight: 'bold' }}>
-                          {linha.nome}
+                    {func.logs.map((linha, index) => (
+                      <tr key={index}>
+                        <td style={{ whiteSpace: 'nowrap', fontWeight: 'bold' }}>{linha.data}</td>
+                        <td>
                           {linha.isEspecial ? (
-                             <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: 'bold', textTransform: 'uppercase' }}>{linha.isEspecial}</div>
+                             <div style={{ fontSize: '10px', color: '#d97706', fontWeight: 'bold', textTransform: 'uppercase' }}>{linha.isEspecial}</div>
                           ) : (
-                             <div style={{ fontSize: '9px', color: '#475569', marginTop: '2px', fontWeight: 'normal' }}>{linha.entrada?.obra || linha.saida?.obra || ''}</div>
+                             <div style={{ fontSize: '10px', color: '#475569' }}>{linha.entrada?.obra || linha.saida?.obra || '-'}</div>
                           )}
                         </td>
                         
-                        {/* meu condicional se for dia de folga no pdf */}
                         {linha.isEspecial ? (
                           <>
                             <td style={{ textAlign: 'center', color: '#94a3b8' }}>-</td>
@@ -1087,9 +1105,9 @@ export default function Dashboard() {
                           </>
                         )}
                       </tr> 
-                    </React.Fragment>
-                  )
-                })}
+                    ))}
+                  </React.Fragment>
+                ))}
               </tbody>
             </table>
           </div>
