@@ -35,9 +35,8 @@ export default function Dashboard() {
   const [fotoExpandida, setFotoExpandida] = useState(null);
   const [modalAberto, setModalAberto] = useState(false); 
   const [modalObraAberto, setModalObraAberto] = useState(false); 
-  
-  // === ATUALIZADO: Usaremos o extratoSelecionado como o "Mega Modal" que abriga tanto as horas quanto o laudo ===
   const [extratoSelecionado, setExtratoSelecionado] = useState(null); 
+  const [certificadoSelecionado, setCertificadoSelecionado] = useState(null); 
   
   // meus estados da gestão de equipe
   const [modalEquipeAberto, setModalEquipeAberto] = useState(false);
@@ -77,43 +76,48 @@ export default function Dashboard() {
     if (modalEquipeAberto) { buscarEquipeCompleta(); }
   }, [modalEquipeAberto]);
 
-  // minha engrenagem principal que busca tudo no supabase e mastiga a matemática de horas
+  // meu super motor de busca paralela (promise.all)
   const buscarDados = async () => {
     setCarregando(true);
     
-    // na tabela de horas eu só exibo quem é funcionário comum
-    const { data: perfis } = await supabase.from('perfis').select('id, nome, funcao, cpf').eq('is_admin', false).order('nome');
-    if (perfis) setFuncionarios(perfis);
-
-    const { data: obrasData } = await supabase.from('obras').select('*').order('nome');
-    if (obrasData) setObrasList(obrasData);
-
-    const { data: folhas } = await supabase.from('folhas_pagamento').select('*').eq('mes_ano', mesFiltro);
-    if (folhas) setFolhasPagamento(folhas);
-
     const [ano, mes] = mesFiltro.split('-');
     const dataInicio = new Date(ano, mes - 1, 1).toISOString();
     const dataFim = new Date(ano, mes, 0, 23, 59, 59).toISOString();
 
-    const { data, error } = await supabase
-      .from('registros_ponto')
-      .select('id, tipo_registro, data_hora, foto_url, localizacao_gps, funcionario_id, obra_nome, perfis ( nome, funcao, cpf )')
-      .gte('data_hora', dataInicio)
-      .lte('data_hora', dataFim)
-      .order('data_hora', { ascending: true });
+    // eu disparo as 4 requisições ao mesmo tempo para o servidor!
+    // ATUALIZADO: removida a trava de is_admin para puxar a empresa inteira!
+    const [
+      reqPerfis,
+      reqObras,
+      reqFolhas,
+      reqPontos
+    ] = await Promise.all([
+      supabase.from('perfis').select('id, nome, funcao, cpf').order('nome'),
+      supabase.from('obras').select('*').order('nome'),
+      supabase.from('folhas_pagamento').select('*').eq('mes_ano', mesFiltro),
+      supabase.from('registros_ponto')
+        .select('id, tipo_registro, data_hora, foto_url, localizacao_gps, funcionario_id, obra_nome, perfis ( nome, funcao, cpf )')
+        .gte('data_hora', dataInicio)
+        .lte('data_hora', dataFim)
+        .order('data_hora', { ascending: true })
+    ]);
 
-    if (error) { console.error(error); setCarregando(false); return; }
+    if (reqPontos.error) { console.error(reqPontos.error); setCarregando(false); return; }
+
+    if (reqPerfis.data) setFuncionarios(reqPerfis.data);
+    if (reqObras.data) setObrasList(reqObras.data);
+    if (reqFolhas.data) setFolhasPagamento(reqFolhas.data);
 
     const agrupamento = {};
     let maiorDataEncontrada = null;
 
-    // meu passo 1: apenas organizo as batidas nos seus devidos dias e descubro se é folga ou férias
-    data.forEach((ponto) => {
+    // meu passo 1: organizo as batidas na velocidade da luz
+    reqPontos.data.forEach((ponto) => {
       const dataObj = new Date(ponto.data_hora);
       const dataLocal = dataObj.toLocaleDateString('pt-BR');
       const horaLocal = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const nomeFuncionario = ponto.perfis?.nome || 'Desconhecido';
-      const cpfFuncionario = ponto.perfis?.cpf || ''; // Injeto o CPF aqui para usar no Laudo
+      const cpfFuncionario = ponto.perfis?.cpf || ''; 
       const cargoFuncionario = ponto.perfis?.funcao || 'Não definida';
       const chave = `${nomeFuncionario}-${dataLocal}`;
 
@@ -134,7 +138,6 @@ export default function Dashboard() {
         };
       }
       
-      // checo se o lançamento foi de folga, férias ou viagem
       if (['FOLGA', 'FÉRIAS', 'VIAGEM'].includes(ponto.obra_nome)) {
         agrupamento[chave].isEspecial = ponto.obra_nome;
       }
@@ -145,19 +148,16 @@ export default function Dashboard() {
 
     const totaisMinutosMes = {};
 
-    // meu passo 2: faço a matemática de descontos infalível
+    // meu passo 2: matemática de descontos infalível
     Object.values(agrupamento).forEach(dia => {
       if (!totaisMinutosMes[dia.nome]) totaisMinutosMes[dia.nome] = 0;
 
-      // se for um dia de folga ou férias fica zero
       if (dia.isEspecial) {
         dia.minutosTrabalhadosDia = 0;
       } 
-      // se for um dia normal de trabalho aplica a regra
       else if (dia.entrada && dia.saida) {
         let minutos = Math.max(0, Math.floor((new Date(dia.saida.rawIso).getTime() - new Date(dia.entrada.rawIso).getTime()) / 60000));
         
-        // meu desconto de 1 hora automático
         if (minutos >= 60) {
           minutos -= 60;
           dia.descontouAlmoco = true;
@@ -181,13 +181,12 @@ export default function Dashboard() {
     setDataMinimaLog(`01/${mes}/${ano}`);
     if (maiorDataEncontrada) setDataMaximaLog(maiorDataEncontrada.toLocaleDateString('pt-BR')); else setDataMaximaLog(`${mes}/${ano}`);
     
-    // crio o resumo agrupando por nome
     const resumo = Object.keys(totaisMinutosMes).sort().map(nome => {
       const totalMins = totaisMinutosMes[nome];
       const diasDoFuncionario = todosPontosCronologicos.filter(p => p.nome === nome);
       return { 
         nome, 
-        cpf: diasDoFuncionario[0]?.cpf || '', // Injeto o CPF no pacote final
+        cpf: diasDoFuncionario[0]?.cpf || '', 
         cargo: diasDoFuncionario[0]?.cargo || 'Não definido', 
         totalMinutos: totalMins, 
         horasFormatadas: `${Math.floor(totalMins / 60)}h ${(totalMins % 60).toString().padStart(2, '0')}m`, 
@@ -475,8 +474,8 @@ export default function Dashboard() {
               .certificado-body { line-height: 1.8 !important; font-size: 12px !important; margin-bottom: 30px !important; text-align: justify !important;}
               .certificado-hash { font-family: monospace !important; background: #f1f5f9 !important; padding: 15px !important; border: 1px solid #cbd5e1 !important; word-wrap: break-word !important; font-size: 10px !important; }
 
-              /* a mágica da paginação para o modo unificado (Extrato + Laudo no mesmo PDF) */
-              .extrato-compacto { page-break-after: always; break-after: page; } /* Obriga o laudo a pular para a folha 2 */
+              /* a mágica da paginação para o modo unificado */
+              .extrato-compacto { page-break-after: always; break-after: page; } 
               .extrato-compacto .pdf-title { font-size: 16px !important; margin-bottom: 2px !important; padding-bottom: 4px !important; }
               .extrato-compacto .pdf-subtitle { margin-bottom: 8px !important; font-size: 10px !important; }
               .extrato-compacto .pdf-section { margin-top: 8px !important; padding-bottom: 2px !important; margin-bottom: 4px !important; font-size: 10px !important; }
@@ -544,10 +543,10 @@ export default function Dashboard() {
         )}
 
         {fotoExpandida && (
-          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"><div className="relative max-w-xl w-full flex flex-col items-center"><button onClick={() => setFotoExpandida(null)} className="absolute -top-12 right-0 p-3 bg-slate-800 hover:bg-slate-700 rounded-full text-white z-50"><X size={24} /></button><img src={fotoExpandida} alt="Auditoria" className="w-full h-auto max-h-[80vh] object-cover rounded-2xl border-4 border-slate-700" /></div></div>
+          <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"><div className="relative max-w-xl w-full flex flex-col items-center"><button onClick={() => setFotoExpandida(null)} className="absolute -top-12 right-0 p-3 bg-slate-800 hover:bg-slate-700 rounded-full text-white z-50"><X size={24} /></button><img src={fotoExpandida} loading="lazy" alt="Auditoria" className="w-full h-auto max-h-[80vh] object-cover rounded-2xl border-4 border-slate-700" /></div></div>
         )}
 
-        {/* === ATUALIZADO: O MEGA MODAL UNIFICADO (EXTRATO + LAUDO NA MESMA TELA) === */}
+        {/* MEU MEGA MODAL UNIFICADO (EXTRATO + LAUDO NA MESMA TELA) */}
         {extratoSelecionado && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-4xl p-6 md:p-8 shadow-2xl relative max-h-[95vh] overflow-y-auto custom-scrollbar">
@@ -831,7 +830,7 @@ export default function Dashboard() {
                                   </button>
                                 )}
 
-                                {/* === ATUALIZADO: O BOTÃO UNIFICADO === */}
+                                {/* botão unificado */}
                                 {resumo && (
                                   <button 
                                     onClick={() => setExtratoSelecionado({ ...resumo, folha: folhaDB })} 
@@ -940,9 +939,9 @@ export default function Dashboard() {
                               </>
                             ) : (
                               <>
-                                <td className="p-5">{linha.entrada ? ( <div className="flex items-start gap-3">{linha.entrada.foto && <img src={linha.entrada.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.entrada.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-emerald-400 text-base">{linha.entrada.hora}</span>{linha.entrada.gps && <BadgeLocalizacao gps={linha.entrada.gps} />}</div></div> ) : <span className="text-slate-700">-</span>}</td>
+                                <td className="p-5">{linha.entrada ? ( <div className="flex items-start gap-3">{linha.entrada.foto && <img src={linha.entrada.foto} loading="lazy" alt="Selfie" onClick={() => setFotoExpandida(linha.entrada.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-emerald-400 text-base">{linha.entrada.hora}</span>{linha.entrada.gps && <BadgeLocalizacao gps={linha.entrada.gps} />}</div></div> ) : <span className="text-slate-700">-</span>}</td>
                                 <td className="p-5 text-slate-400 text-xs whitespace-nowrap">{linha.saida ? (linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
-                                <td className="p-5">{linha.saida ? ( <div className="flex items-start gap-3">{linha.saida.foto && <img src={linha.saida.foto} alt="Selfie" onClick={() => setFotoExpandida(linha.saida.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-slate-300 text-base">{linha.saida.hora}</span>{linha.saida.gps && <BadgeLocalizacao gps={linha.saida.gps} />}</div></div> ) : <span className="text-xs bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full font-medium">Em andamento</span>}</td>
+                                <td className="p-5">{linha.saida ? ( <div className="flex items-start gap-3">{linha.saida.foto && <img src={linha.saida.foto} loading="lazy" alt="Selfie" onClick={() => setFotoExpandida(linha.saida.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-slate-300 text-base">{linha.saida.hora}</span>{linha.saida.gps && <BadgeLocalizacao gps={linha.saida.gps} />}</div></div> ) : <span className="text-xs bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full font-medium">Em andamento</span>}</td>
                                 <td className="p-5 text-right">
                                   {linha.minutosTrabalhadosDia > 0 ? ( 
                                     <span className="inline-flex items-center gap-1 bg-slate-900 text-blue-400 px-3 py-1.5 rounded-lg text-sm font-mono font-bold border border-slate-800">
@@ -969,7 +968,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* === MEUS LAYOUTS DE IMPRESSÃO EM PDF === */}
+      {/* meus layouts de impressão em pdf */}
       <div className="hidden print:block area-impressao font-sans text-black">
         
         {/* === ATUALIZADO: MEU EXTRATO UNIFICADO (PÁGINA 1 = HORAS | PÁGINA 2 = LAUDO) === */}
@@ -1023,7 +1022,7 @@ export default function Dashboard() {
             </table>
             <div className="pdf-box"><span style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '11px' }}>Saldo Acumulado:</span><span style={{ fontSize: '14px', fontWeight: 'bold', fontFamily: 'monospace' }}>{extratoSelecionado.horasFormatadas}</span></div>
             
-            {/* PÁGINA 2: O Laudo Técnico de Assinatura (A mágica do page-break do CSS joga isso para a folha de baixo) */}
+            {/* PÁGINA 2: O Laudo Técnico de Assinatura */}
             {extratoSelecionado.folha?.status === 'assinado' && (
               <div className="laudo-pagina-2" style={{ pageBreakBefore: 'always', paddingTop: '10mm' }}>
                 <div className="certificado-container">
