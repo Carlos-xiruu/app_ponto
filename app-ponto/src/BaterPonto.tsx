@@ -5,7 +5,6 @@ import { supabase } from './supabaseClient';
 import { LogIn, LogOut, Camera, CheckCircle2, AlertCircle, User, Briefcase, CalendarClock, Save, Upload, Loader2, Ban, Building2, ChevronDown, Home, ClipboardList, MapPin, ShieldAlert, FileSignature, X, ShieldCheck } from 'lucide-react';
 
 export default function BaterPonto() {
-  // Meus controladores da câmera e estados principais
   const webcamRef = useRef<Webcam>(null);
   const [status, setStatus] = useState('');
   const [carregando, setCarregando] = useState(false);
@@ -13,21 +12,18 @@ export default function BaterPonto() {
 
   const [abaAtiva, setAbaAtiva] = useState('inicio'); 
 
-  // Aqui eu guardo os dados do peão logado
   const [perfil, setPerfil] = useState({ id: '', nome: '', funcao: '', avatar_url: '', cpf: '' });
   
   const [obrasList, setObrasList] = useState([]);
   const [obraSelecionadaId, setObraSelecionadaId] = useState('');
   const [dropdownAberto, setDropdownAberto] = useState(false);
   
-  // === ATUALIZADO: Agora suporta o status 'especial' para Folgas e Férias ===
   const [jornadaAtual, setJornadaAtual] = useState({ status: 'livre', pontoEntradaGps: null, bloqueadoPorHoje: false, obraNomeAtual: '' });
   const [fazendoUpload, setFazendoUpload] = useState(false);
 
   const mesAtual = new Date().toISOString().slice(0, 7); 
   const [mesFiltro, setMesFiltro] = useState(mesAtual);
   
-  // === NOVO: Estados para o Dashboard do Funcionário ===
   const [meusRegistros, setMeusRegistros] = useState([]);
   const [resumoMensalApp, setResumoMensalApp] = useState(null);
   const [carregandoRegistros, setCarregandoRegistros] = useState(false);
@@ -47,7 +43,6 @@ export default function BaterPonto() {
     setTimeout(() => setStatus(''), 6000);
   };
 
-  // Meu reloginho rodando em tempo real na tela principal
   useEffect(() => {
     const timer = setInterval(() => setHoraAtual(new Date()), 1000);
     carregarDadosDoFuncionario();
@@ -58,7 +53,6 @@ export default function BaterPonto() {
     if (abaAtiva === 'registros') buscarHistoricoMensal();
   }, [abaAtiva, mesFiltro, perfil.id]);
 
-  // Minha função que lê o dia de hoje e entende se o peão está trabalhando, de folga ou em casa
   const carregarDadosDoFuncionario = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -78,18 +72,13 @@ export default function BaterPonto() {
       const dataAcaoLocal = new Date(ultimaAcao.data_hora).toLocaleDateString('pt-BR');
       const dataHojeLocal = new Date().toLocaleDateString('pt-BR');
 
-      // Se a última batida foi hoje, eu decifro o que aconteceu
       if (dataAcaoLocal === dataHojeLocal) {
-        
-        // Se o nome da obra for especial, ele tá de Folga/Férias/Viagem
         if (['FOLGA', 'FÉRIAS', 'VIAGEM'].includes(ultimaAcao.obra_nome)) {
            setJornadaAtual({ status: 'especial', bloqueadoPorHoje: true, obraNomeAtual: ultimaAcao.obra_nome });
         } 
-        // Se bateu saída num dia normal, ele terminou o dia
         else if (ultimaAcao.tipo_registro === 'saida') {
            setJornadaAtual({ status: 'livre', bloqueadoPorHoje: true, obraNomeAtual: '' });
         } 
-        // Se bateu entrada, está trabalhando
         else {
            setJornadaAtual({ status: 'trabalhando', pontoEntradaGps: ultimaAcao.localizacao_gps, bloqueadoPorHoje: false, obraNomeAtual: ultimaAcao.obra_nome });
            if (obrasData && ultimaAcao.obra_nome) {
@@ -98,7 +87,6 @@ export default function BaterPonto() {
            }
         }
       } else {
-        // Se a última batida for de ontem, o dia de hoje está livre e zerado
         setJornadaAtual({ status: 'livre', bloqueadoPorHoje: false, obraNomeAtual: '' });
       }
     } else {
@@ -111,7 +99,6 @@ export default function BaterPonto() {
     if (data) setFolhasPendentes(data);
   };
 
-  // === NOVO: Minha função matemática que constrói o MiniDashboard do App ===
   const buscarHistoricoMensal = async () => {
     if (!perfil.id) return;
     setCarregandoRegistros(true);
@@ -131,11 +118,9 @@ export default function BaterPonto() {
         const dataKeyMath = dataObj.toLocaleDateString('pt-BR');
         const horaStr = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         
-        // === 1. Lógica Visual (Lista de Registros) ===
         if (!agrupadoVisual[dataStrVisual]) agrupadoVisual[dataStrVisual] = [];
         
         if (['FOLGA', 'FÉRIAS', 'VIAGEM'].includes(ponto.obra_nome)) {
-           // Para folgas, eu coloco apenas 1 item na lista visual, para não poluir com Entrada e Saída falsas
            if (!agrupadoVisual[dataStrVisual].some(p => p.isEspecial)) {
               agrupadoVisual[dataStrVisual].push({ id: ponto.id, isEspecial: ponto.obra_nome });
            }
@@ -143,7 +128,6 @@ export default function BaterPonto() {
            agrupadoVisual[dataStrVisual].push({ ...ponto, horaFormatada: horaStr, isEspecial: false });
         }
 
-        // === 2. Lógica Matemática (Para o Dashboard) ===
         if (!diasParaCalculo[dataKeyMath]) diasParaCalculo[dataKeyMath] = { entrada: null, saida: null, isEspecial: false, obra: ponto.obra_nome || 'Base' };
         
         if (['FOLGA', 'FÉRIAS', 'VIAGEM'].includes(ponto.obra_nome)) {
@@ -154,11 +138,11 @@ export default function BaterPonto() {
         if (ponto.tipo_registro === 'saida') diasParaCalculo[dataKeyMath].saida = ponto.data_hora;
       });
 
-      // === 3. A Matemática (Exatamente igual ao painel do Gestor) ===
       let totalMins = 0;
       let folgasAcumuladas = 0;
       const obrasAcumuladas = {};
 
+      // === A MÁGICA DA NOVA REGRA DE ALMOÇO DO PEÃO ===
       Object.values(diasParaCalculo).forEach(dia => {
          if (dia.isEspecial) {
             folgasAcumuladas++;
@@ -167,8 +151,10 @@ export default function BaterPonto() {
             const dtSai = new Date(dia.saida);
             let mins = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
             
-            // O Desconto de 1 Hora do Gestor, implementado no app
-            if (mins >= 60) mins -= 60; else mins = 0;
+            // só desconta se ele entrou antes do meio-dia E saiu a partir das 16:00
+            if (dtEnt.getHours() < 12 && dtSai.getHours() >= 16) {
+              mins = Math.max(0, mins - 60);
+            }
             
             totalMins += mins;
 
@@ -178,7 +164,6 @@ export default function BaterPonto() {
          }
       });
 
-      // Fecho o pacote de dados do MiniDashboard
       setResumoMensalApp({
          horasFormatadas: `${Math.floor(totalMins / 60)}h ${(totalMins % 60).toString().padStart(2, '0')}m`,
          diasEspeciais: folgasAcumuladas,
@@ -190,7 +175,6 @@ export default function BaterPonto() {
     setCarregandoRegistros(false);
   };
 
-  // Minha lógica para desenhar a tabela de horas que o funcionário vai assinar no celular
   const abrirModalAssinatura = async (folha) => {
     setFolhaParaAssinar(folha);
     setModalAssinaturaAberto(true);
@@ -230,10 +214,12 @@ export default function BaterPonto() {
           const dtSai = new Date(dia.saida.raw);
           let mins = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
           
-          if (mins >= 60) {
-            mins -= 60;
+          // mesma regra do almoço blindada na hora de assinar
+          if (dtEnt.getHours() < 12 && dtSai.getHours() >= 16) {
+            mins = Math.max(0, mins - 60);
+            dia.descontouAlmoco = true;
           } else {
-            mins = 0;
+            dia.descontouAlmoco = false;
           }
           
           dia.totalDia = mins;
@@ -248,7 +234,6 @@ export default function BaterPonto() {
     }
   };
 
-  // Minhas funções de segurança para bater o martelo na validade jurídica
   const gerarHashCriptografico = async (texto) => {
     const encoder = new TextEncoder();
     const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(texto));
@@ -298,21 +283,18 @@ export default function BaterPonto() {
     );
   };
 
-  // Minha fórmula matemática (Haversine) para o Geofence
   const calcularDistanciaEmMetros = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3; const rad = Math.PI / 180;
     const a = Math.sin((lat2 - lat1) * rad / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin((lon2 - lon1) * rad / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
-  // Onde o ponto realmente acontece
   const registrar = useCallback(async (tipoRegistro: 'entrada' | 'saida') => {
     if (jornadaAtual.bloqueadoPorHoje || jornadaAtual.status === 'especial') { mostrarAviso('Jornada bloqueada para registro hoje.'); return; }
     if (!obraSelecionadaId) { mostrarAviso('Erro: Selecione a Obra onde você está agora.'); return; }
 
     const horaLocal = new Date().getHours();
 
-    // Minhas travas de horário fixo
     if (tipoRegistro === 'entrada' && horaLocal >= 8) {
       mostrarAviso('Erro: Entrada bloqueada após as 08:00 da manhã. Fale com o Gestor.');
       return;
@@ -388,7 +370,6 @@ export default function BaterPonto() {
     return obrasList.find(o => o.id === obraSelecionadaId)?.nome || 'Obra Desconhecida';
   };
 
-  // Os bloqueadores que desativam os botões da tela inicial (Aprimorados para os Dias Especiais)
   const horaLocalNum = horaAtual.getHours();
   const bloqueiaEntrada = jornadaAtual.status === 'trabalhando' || jornadaAtual.bloqueadoPorHoje || jornadaAtual.status === 'especial' || horaLocalNum >= 8;
   const bloqueiaSaida = jornadaAtual.bloqueadoPorHoje || jornadaAtual.status === 'especial' || horaLocalNum < 8;
@@ -396,7 +377,6 @@ export default function BaterPonto() {
   return (
     <div className="h-screen bg-[#020617] font-['Inter'] text-slate-100 flex flex-col overflow-hidden relative">
       
-      {/* HEADER FIXO NO TOPO */}
       <div className="w-full bg-[#0f172a]/90 backdrop-blur-md border-b border-slate-800 p-4 shrink-0 flex justify-between items-center z-20">
         <div className="flex items-center gap-3">
           {perfil.avatar_url ? ( <img src={perfil.avatar_url} alt="Avatar" className="w-10 h-10 rounded-full object-cover border border-slate-600" /> ) : ( <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-emerald-500 font-bold border border-slate-700">{perfil.nome ? perfil.nome.charAt(0).toUpperCase() : <User size={20} />}</div> )}
@@ -408,7 +388,6 @@ export default function BaterPonto() {
         </div>
       </div>
 
-      {/* ALERTA GLOBAL DE PENDÊNCIA JURÍDICA */}
       {folhasPendentes.length > 0 && !modalAssinaturaAberto && (
         <div className="w-full bg-red-950/90 border-b border-red-900/50 p-3 shrink-0 flex items-center justify-between z-10 animate-in slide-in-from-top-2">
           <div className="flex items-center gap-2.5">
@@ -419,13 +398,11 @@ export default function BaterPonto() {
         </div>
       )}
 
-      {/* ÁREA DE ROLAGEM DINÂMICA */}
       <div className="flex-1 overflow-y-auto pb-24 custom-scrollbar">
         {abaAtiva === 'inicio' && (
           <div className="w-full max-w-sm mx-auto flex flex-col items-center pt-6 px-6">
             <div className="mb-6 text-center"><div className="font-['Montserrat'] text-5xl font-bold tracking-tight text-white drop-shadow-lg">{horaAtual.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}<span className="text-2xl text-slate-500 ml-1">{horaAtual.toLocaleTimeString('pt-BR', { second: '2-digit' })}</span></div></div>
             
-            {/* O status gigante no topo da tela, agora superinteligente */}
             <div className={`w-full p-4 rounded-2xl mb-6 flex items-center justify-center gap-3 border text-center shadow-lg 
               ${jornadaAtual.status === 'especial' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' :
                 jornadaAtual.bloqueadoPorHoje ? 'bg-slate-800/50 border-slate-700/50 text-slate-400' : 
@@ -477,7 +454,6 @@ export default function BaterPonto() {
               </div>
             </div>
 
-            {/* Botões Lado a Lado */}
             <div className="w-full flex gap-3">
               <button 
                 onClick={() => registrar('entrada')} 
@@ -506,7 +482,6 @@ export default function BaterPonto() {
               </button>
             </div>
 
-            {/* Mensagens Explicativas da Regra de Negócio (Só mostramos se for dia de trabalho) */}
             {horaLocalNum >= 8 && jornadaAtual.status === 'livre' && !jornadaAtual.bloqueadoPorHoje && (
               <div className="w-full mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-center gap-2 text-amber-500">
                 <AlertCircle size={16} />
@@ -540,7 +515,6 @@ export default function BaterPonto() {
             ) : (
               <div className="flex flex-col gap-4">
                 
-                {/* === O DASHBOARD DO PEÃO === */}
                 {resumoMensalApp && (
                   <div className="mb-4 flex flex-col gap-4 animate-in fade-in">
                     <div className="grid grid-cols-2 gap-3">
@@ -554,7 +528,6 @@ export default function BaterPonto() {
                       </div>
                     </div>
 
-                    {/* Relatório de Obras Trabalhadas */}
                     {resumoMensalApp.obras.length > 0 && (
                       <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4 shadow-lg">
                         <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-3 flex items-center gap-1.5"><Building2 size={12}/> Horas Acumuladas por Local</span>
@@ -572,7 +545,6 @@ export default function BaterPonto() {
                     <div className="h-px bg-slate-800 my-2"></div>
                   </div>
                 )}
-                {/* === FIM DO DASHBOARD DO PEÃO === */}
 
                 {meusRegistros.map(([data, pontos]) => (
                   <div key={data} className="bg-[#0f172a] border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
@@ -581,7 +553,6 @@ export default function BaterPonto() {
                       {pontos.map((ponto, idx) => (
                         <div key={idx} className="flex justify-between items-center bg-slate-900/50 p-3 rounded-xl border border-slate-800/50">
                           
-                          {/* Se for uma folga eu exibo o badge limpo. Senão, exibo a Entrada/Saída normal */}
                           {ponto.isEspecial ? (
                              <div className="flex items-center gap-2">
                                 <span className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5"><AlertCircle size={14}/> {ponto.isEspecial} OFICIAL</span>
@@ -635,7 +606,6 @@ export default function BaterPonto() {
         </div>
       )}
 
-      {/* BARRA INFERIOR */}
       <div className="fixed bottom-0 left-0 right-0 bg-[#0b1120]/95 backdrop-blur-lg border-t border-slate-800 shrink-0 z-40 px-6 pb-safe">
         <div className="flex justify-between items-center max-w-sm mx-auto h-20">
           <button onClick={() => setAbaAtiva('inicio')} className={`flex flex-col items-center gap-1.5 w-20 transition-colors ${abaAtiva === 'inicio' ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}><Home size={24} className={abaAtiva === 'inicio' ? 'fill-emerald-400/20' : ''} /><span className="text-[10px] font-bold uppercase tracking-wider">Início</span></button>
@@ -644,7 +614,6 @@ export default function BaterPonto() {
         </div>
       </div>
 
-      {/* === MODAL DE ASSINATURA NA TELA DO PEÃO === */}
       {modalAssinaturaAberto && folhaParaAssinar && (
         <div className="fixed inset-0 z-[999] flex flex-col bg-[#020617] p-0 sm:p-4">
           <div className="bg-[#0f172a] w-full h-full sm:h-auto sm:max-h-[90vh] sm:rounded-3xl shadow-2xl flex flex-col relative animate-in zoom-in-95">
@@ -671,14 +640,12 @@ export default function BaterPonto() {
                     <span className="text-4xl font-black text-emerald-500 font-mono">{espelhoAssinatura.horasFormatadas}</span>
                   </div>
 
-                  {/* Minha listagem de dias ajustada para caber legal em qualquer celular e mostrar Folgas */}
                   <div className="space-y-3 mb-6">
                     {espelhoAssinatura.dias.map((dia, i) => (
                       <div key={i} className="bg-slate-900/50 border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
                         <div className="flex justify-between items-center gap-1 sm:gap-3">
                            <span className="font-bold text-slate-200 text-xs sm:text-sm w-12 sm:w-16 shrink-0">{dia.data.substring(0,5)}</span>
                            
-                           {/* Aqui entra minha mágica se o dia for Férias/Folga */}
                            {dia.isEspecial ? (
                              <>
                                <div className="flex-1 flex justify-center text-xs sm:text-sm font-bold text-amber-400 tracking-wider">

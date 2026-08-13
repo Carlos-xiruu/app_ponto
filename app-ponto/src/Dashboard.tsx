@@ -68,15 +68,13 @@ export default function Dashboard() {
   const mesFiltroPadrao = `${dataAtual.getFullYear()}-${String(dataAtual.getMonth() + 1).padStart(2, '0')}`;
   const [mesFiltro, setMesFiltro] = useState(mesFiltroPadrao);
 
-  // meu gatilho que roda a busca de dados de novo sempre que o mês mudar
   useEffect(() => { buscarDados(); }, [mesFiltro]);
 
-  // meu gatilho secundário para buscar a equipe completa só quando abrir a tela de gestão
   useEffect(() => {
     if (modalEquipeAberto) { buscarEquipeCompleta(); }
   }, [modalEquipeAberto]);
 
-  // meu super motor de busca paralela (promise.all)
+  // meu super motor de busca paralela
   const buscarDados = async () => {
     setCarregando(true);
     
@@ -84,8 +82,6 @@ export default function Dashboard() {
     const dataInicio = new Date(ano, mes - 1, 1).toISOString();
     const dataFim = new Date(ano, mes, 0, 23, 59, 59).toISOString();
 
-    // eu disparo as 4 requisições ao mesmo tempo para o servidor!
-    // ATUALIZADO: removida a trava de is_admin para puxar a empresa inteira!
     const [
       reqPerfis,
       reqObras,
@@ -111,7 +107,6 @@ export default function Dashboard() {
     const agrupamento = {};
     let maiorDataEncontrada = null;
 
-    // meu passo 1: organizo as batidas na velocidade da luz
     reqPontos.data.forEach((ponto) => {
       const dataObj = new Date(ponto.data_hora);
       const dataLocal = dataObj.toLocaleDateString('pt-BR');
@@ -148,7 +143,7 @@ export default function Dashboard() {
 
     const totaisMinutosMes = {};
 
-    // meu passo 2: matemática de descontos infalível
+    // === A MÁGICA DA NOVA REGRA DE ALMOÇO DO GESTOR ===
     Object.values(agrupamento).forEach(dia => {
       if (!totaisMinutosMes[dia.nome]) totaisMinutosMes[dia.nome] = 0;
 
@@ -156,13 +151,16 @@ export default function Dashboard() {
         dia.minutosTrabalhadosDia = 0;
       } 
       else if (dia.entrada && dia.saida) {
-        let minutos = Math.max(0, Math.floor((new Date(dia.saida.rawIso).getTime() - new Date(dia.entrada.rawIso).getTime()) / 60000));
+        const dtEnt = new Date(dia.entrada.rawIso);
+        const dtSai = new Date(dia.saida.rawIso);
+        let minutos = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
         
-        if (minutos >= 60) {
-          minutos -= 60;
+        // só desconta 1h de almoço se ele entrou antes do meio-dia E saiu a partir das 16:00
+        if (dtEnt.getHours() < 12 && dtSai.getHours() >= 16) {
+          minutos = Math.max(0, minutos - 60);
           dia.descontouAlmoco = true;
         } else {
-          minutos = 0;
+          dia.descontouAlmoco = false;
         }
 
         dia.minutosTrabalhadosDia = minutos;
@@ -199,7 +197,6 @@ export default function Dashboard() {
 
   // inicio do meu motor de gestão de equipe para promover e demitir
   const buscarEquipeCompleta = async () => {
-    // puxo todo mundo para podermos rebaixar admins se precisar
     const { data } = await supabase.from('perfis').select('*').order('nome');
     if (data) setEquipeCompleta(data);
   };
@@ -241,7 +238,6 @@ export default function Dashboard() {
     setCarregando(false);
   };
 
-  // minhas funções de disparo em lote e individual para fechar a folha
   const fecharFolhaDoMes = async () => {
     if(!window.confirm(`ATENÇÃO GESTOR:\nVocê está prestes a FECHAR a folha de ${mesFiltro} para TODOS os colaboradores.\nIsso enviará o espelho de ponto deste mês para todos assinarem digitalmente pelo aplicativo.\n\nTem certeza que os registros estão corretos?`)) return;
     setCarregando(true);
@@ -282,7 +278,6 @@ export default function Dashboard() {
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(texto)}`, '_blank');
   };
 
-  // inicio da minha função que preenche o modal para edição a jato
   const abrirEdicaoPonto = (linha) => {
     const [d, m, y] = linha.data.split('/');
     const dataIso = `${y}-${m}-${d}`;
@@ -312,7 +307,6 @@ export default function Dashboard() {
     setFormManual({ funcionario_id: '', tipo_lancamento: 'normal', data_inicio: '', data_fim: '', hora_entrada: '07:00', hora_saida: '17:00', obra_nome: 'Lançamento Manual / Base' });
   }
 
-  // meu lançamento manual e edição usando o motor unificado
   const lancarPontoManual = async (e) => {
     e.preventDefault(); 
     setCarregando(true);
@@ -372,7 +366,6 @@ export default function Dashboard() {
     setCarregando(false);
   };
 
-  // minha integração com a api da photon
   const buscarCoordenadasPorEndereco = async () => {
     if (!formObra.buscaEndereco) return;
     setBuscandoEndereco(true);
@@ -397,7 +390,6 @@ export default function Dashboard() {
     await supabase.from('obras').delete().eq('id', idObra); buscarDados();
   };
 
-  // minha lógica de filtragem da tabela geral e do pdf
   let resumoFiltrado = resumoMensal;
 
   if (filtroNome) {
@@ -407,7 +399,6 @@ export default function Dashboard() {
   if (filtroData) {
     const [y, m, d] = filtroData.split('-');
     const dataFormatada = `${d}/${m}/${y}`;
-    // eu varro a lista e jogo fora os dias que não batem com o filtro
     resumoFiltrado = resumoFiltrado.map(r => ({
       ...r,
       logs: r.logs.filter(l => l.data === dataFormatada)
@@ -421,7 +412,6 @@ export default function Dashboard() {
       
       <style>
         {`
-            /* meu css blindado para a tela e impressão com anti guilhotina ativado */
             html, body { touch-action: pan-y; overscroll-behavior-y: none; -webkit-user-select: none; user-select: none; }
             input, select, textarea { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; }
 
@@ -474,7 +464,6 @@ export default function Dashboard() {
               .certificado-body { line-height: 1.8 !important; font-size: 12px !important; margin-bottom: 30px !important; text-align: justify !important;}
               .certificado-hash { font-family: monospace !important; background: #f1f5f9 !important; padding: 15px !important; border: 1px solid #cbd5e1 !important; word-wrap: break-word !important; font-size: 10px !important; }
 
-              /* a mágica da paginação para o modo unificado */
               .extrato-compacto { page-break-after: always; break-after: page; } 
               .extrato-compacto .pdf-title { font-size: 16px !important; margin-bottom: 2px !important; padding-bottom: 4px !important; }
               .extrato-compacto .pdf-subtitle { margin-bottom: 8px !important; font-size: 10px !important; }
@@ -487,10 +476,7 @@ export default function Dashboard() {
         `}
       </style>
 
-      {/* área de modais e minhas sobreposições na tela */}
       <div className="modais-extracao">
-        
-        {/* meu modal de gestão de equipe */}
         {modalEquipeAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-3xl p-6 md:p-8 shadow-2xl relative max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95">
@@ -514,7 +500,6 @@ export default function Dashboard() {
                           </div>
                           
                           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                             {/* meu badge visual de quem manda na parada */}
                              {membro.is_admin ? (
                                <span className="px-3 py-1.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5"><Shield size={14}/> Gestor</span>
                              ) : (
@@ -523,12 +508,10 @@ export default function Dashboard() {
 
                              <div className="h-8 w-px bg-slate-700 mx-1 hidden sm:block"></div>
 
-                             {/* meu botão de promover ou rebaixar */}
                              <button onClick={() => alternarPermissaoGestor(membro)} title={membro.is_admin ? "Remover acesso de Gestor" : "Tornar Gestor do Sistema"} className={`p-2.5 rounded-lg transition-colors flex items-center gap-2 ${membro.is_admin ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white' : 'bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white'}`}>
                                 <Key size={18} />
                              </button>
 
-                             {/* meu botão da guilhotina de demissão */}
                              <button onClick={() => excluirColaborador(membro)} title="Excluir Conta e Histórico" className="p-2.5 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-lg transition-colors flex items-center gap-2">
                                 <Trash2 size={18} />
                              </button>
@@ -546,13 +529,11 @@ export default function Dashboard() {
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"><div className="relative max-w-xl w-full flex flex-col items-center"><button onClick={() => setFotoExpandida(null)} className="absolute -top-12 right-0 p-3 bg-slate-800 hover:bg-slate-700 rounded-full text-white z-50"><X size={24} /></button><img src={fotoExpandida} loading="lazy" alt="Auditoria" className="w-full h-auto max-h-[80vh] object-cover rounded-2xl border-4 border-slate-700" /></div></div>
         )}
 
-        {/* MEU MEGA MODAL UNIFICADO (EXTRATO + LAUDO NA MESMA TELA) */}
         {extratoSelecionado && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-4xl p-6 md:p-8 shadow-2xl relative max-h-[95vh] overflow-y-auto custom-scrollbar">
               <button onClick={() => setExtratoSelecionado(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-3 rounded-xl hover:bg-slate-800 transition-colors z-50"><X size={24} /></button>
               
-              {/* Cabeçalho do Modal Unificado */}
               <div className="flex items-center gap-3 mb-6 border-b border-slate-800 pb-4">
                  <FileText size={28} className="text-blue-400" />
                  <div>
@@ -581,7 +562,6 @@ export default function Dashboard() {
                         <tr key={i} className="hover:bg-slate-800/30 transition-colors">
                           <td className="p-4 font-medium text-slate-200 whitespace-nowrap">{l.data}</td>
                           
-                          {/* meu condicional: se for folga ou férias mostro diferente */}
                           {l.isEspecial ? (
                             <>
                               <td className="p-4 text-xs font-bold text-amber-400 uppercase tracking-wider">{l.isEspecial}</td>
@@ -608,13 +588,11 @@ export default function Dashboard() {
                 </div>
               </div>
               
-              {/* Minha caixa de Saldo */}
               <div className="flex justify-between items-center bg-gradient-to-r from-slate-900 to-[#0f172a] p-5 rounded-2xl border border-blue-900/30 mb-8 shadow-inner">
                  <span className="text-sm font-bold text-slate-400 uppercase tracking-wider">Saldo Acumulado:</span>
                  <span className="text-3xl font-black text-blue-400 font-mono">{extratoSelecionado.horasFormatadas}</span>
               </div>
               
-              {/* O LAUDO TÉCNICO VEM LOGO EM SEGUIDA DENTRO DO MESMO MODAL */}
               {extratoSelecionado.folha?.status === 'assinado' && (
                 <div className="mb-8 p-6 bg-slate-900/50 border border-slate-700 rounded-2xl">
                   <div className="flex flex-col items-center mb-6 border-b border-slate-800 pb-6">
@@ -661,7 +639,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* meu modal de lançamento manual e edição */}
         {modalAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
@@ -689,7 +666,6 @@ export default function Dashboard() {
                   </select>
                 </div>
                 
-                {/* minha correção de responsividade da data */}
                 <div className="flex flex-col sm:flex-row gap-4">
                   <div className="flex-1">
                     <label className="text-xs text-slate-400 mb-1 block">Data Início</label>
@@ -701,7 +677,6 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* se for trabalho normal peço a obra e a hora, se for férias eu oculto isso */}
                 {formManual.tipo_lancamento === 'normal' && (
                   <div className="animate-in fade-in slide-in-from-top-2 flex flex-col gap-4">
                     <div>
@@ -733,7 +708,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* restante dos modais da tela continuam intactos */}
         {modalObraAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-4xl p-6 md:p-8 shadow-2xl relative flex flex-col md:flex-row gap-8 max-h-[90vh] overflow-y-auto">
@@ -776,7 +750,6 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* área principal da tela do gestor */}
       <div className="tela-interativa p-4 md:p-8 max-w-[1200px] mx-auto relative z-10">
         <div className="block">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-5">
@@ -795,7 +768,6 @@ export default function Dashboard() {
           <div className="mb-8">
             <div className="bg-[#0f172a] border border-slate-700 rounded-2xl p-5 md:w-1/3 shadow-xl mb-6"><label className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3 block">Filtro de Competência (Mês/Ano)</label><input type="month" value={mesFiltro} onChange={(e) => setMesFiltro(e.target.value)} className="w-full bg-slate-900 border-2 border-slate-600 hover:border-slate-500 text-slate-100 font-semibold text-lg p-3.5 rounded-xl focus:border-emerald-500 outline-none transition-colors [color-scheme:dark]" /></div>
             
-            {/* minha tabela de fechamento por funcionário */}
             <div className="bg-[#0f172a]/80 border border-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
               <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/50"><h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2"><ShieldCheck size={18} className="text-emerald-500" /> Controle de Folha e Assinaturas</h3></div>
               <div className="overflow-x-auto">
@@ -830,7 +802,6 @@ export default function Dashboard() {
                                   </button>
                                 )}
 
-                                {/* botão unificado */}
                                 {resumo && (
                                   <button 
                                     onClick={() => setExtratoSelecionado({ ...resumo, folha: folhaDB })} 
@@ -853,11 +824,9 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* a mágica visual acontece aqui com o espelho geral dividido por funcionários */}
           <div className="bg-[#0f172a]/60 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
             <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/30"><h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Espelho de Ponto Geral Diário</h3></div>
             
-            {/* minha barra de filtros elegante */}
             <div className="flex flex-col sm:flex-row gap-4 p-5 border-b border-slate-800 bg-slate-900/50">
                <div className="flex-1">
                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Search size={14}/> Buscar Colaborador</label>
@@ -968,14 +937,11 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* meus layouts de impressão em pdf */}
       <div className="hidden print:block area-impressao font-sans text-black">
         
-        {/* === ATUALIZADO: MEU EXTRATO UNIFICADO (PÁGINA 1 = HORAS | PÁGINA 2 = LAUDO) === */}
         {extratoSelecionado ? (
           <div className="extrato-compacto">
             
-            {/* PÁGINA 1: O Extrato de Horas */}
             <h1 className="pdf-title">DEMONSTRATIVO INDIVIDUAL DE JORNADA</h1>
             <p className="pdf-subtitle">Competência Fiscal: <strong>{mesFiltro.split('-')[1]}/{mesFiltro.split('-')[0]}</strong></p>
             <div className="pdf-section">1. Dados do Colaborador</div>
@@ -1022,7 +988,6 @@ export default function Dashboard() {
             </table>
             <div className="pdf-box"><span style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '11px' }}>Saldo Acumulado:</span><span style={{ fontSize: '14px', fontWeight: 'bold', fontFamily: 'monospace' }}>{extratoSelecionado.horasFormatadas}</span></div>
             
-            {/* PÁGINA 2: O Laudo Técnico de Assinatura */}
             {extratoSelecionado.folha?.status === 'assinado' && (
               <div className="laudo-pagina-2" style={{ pageBreakBefore: 'always', paddingTop: '10mm' }}>
                 <div className="certificado-container">
@@ -1048,7 +1013,6 @@ export default function Dashboard() {
             )}
           </div>
 
-        /* meu relatório geral com a tabela pdf acompanhando os filtros da tela agrupado por funcionário */
         ) : (
           <div>
             <h1 className="pdf-title">RELATÓRIO GERENCIAL DE FECHAMENTO</h1>
