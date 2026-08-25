@@ -107,6 +107,7 @@ export default function Dashboard() {
     const agrupamento = {};
     let maiorDataEncontrada = null;
 
+    // organizo as batidas
     reqPontos.data.forEach((ponto) => {
       const dataObj = new Date(ponto.data_hora);
       const dataLocal = dataObj.toLocaleDateString('pt-BR');
@@ -143,7 +144,7 @@ export default function Dashboard() {
 
     const totaisMinutosMes = {};
 
-    // === A MÁGICA DA NOVA REGRA DE ALMOÇO DO GESTOR ===
+    // a regra cirurgica do almoço do painel do gestor
     Object.values(agrupamento).forEach(dia => {
       if (!totaisMinutosMes[dia.nome]) totaisMinutosMes[dia.nome] = 0;
 
@@ -155,8 +156,8 @@ export default function Dashboard() {
         const dtSai = new Date(dia.saida.rawIso);
         let minutos = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
         
-        // só desconta 1h de almoço se ele entrou antes do meio-dia E saiu a partir das 16:00
-        if (dtEnt.getHours() < 12 && dtSai.getHours() >= 16) {
+        // se entrou antes das 12 e saiu a partir das 13 desconta 1 hora
+        if (dtEnt.getHours() < 12 && dtSai.getHours() >= 13) {
           minutos = Math.max(0, minutos - 60);
           dia.descontouAlmoco = true;
         } else {
@@ -238,6 +239,7 @@ export default function Dashboard() {
     setCarregando(false);
   };
 
+  // minhas funções de disparo em lote e individual para fechar a folha
   const fecharFolhaDoMes = async () => {
     if(!window.confirm(`ATENÇÃO GESTOR:\nVocê está prestes a FECHAR a folha de ${mesFiltro} para TODOS os colaboradores.\nIsso enviará o espelho de ponto deste mês para todos assinarem digitalmente pelo aplicativo.\n\nTem certeza que os registros estão corretos?`)) return;
     setCarregando(true);
@@ -278,6 +280,7 @@ export default function Dashboard() {
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(texto)}`, '_blank');
   };
 
+  // inicio da minha função que preenche o modal para edição a jato
   const abrirEdicaoPonto = (linha) => {
     const [d, m, y] = linha.data.split('/');
     const dataIso = `${y}-${m}-${d}`;
@@ -307,6 +310,7 @@ export default function Dashboard() {
     setFormManual({ funcionario_id: '', tipo_lancamento: 'normal', data_inicio: '', data_fim: '', hora_entrada: '07:00', hora_saida: '17:00', obra_nome: 'Lançamento Manual / Base' });
   }
 
+  // meu lançamento manual e edição usando o motor unificado
   const lancarPontoManual = async (e) => {
     e.preventDefault(); 
     setCarregando(true);
@@ -366,6 +370,7 @@ export default function Dashboard() {
     setCarregando(false);
   };
 
+  // minha integração com a api da photon
   const buscarCoordenadasPorEndereco = async () => {
     if (!formObra.buscaEndereco) return;
     setBuscandoEndereco(true);
@@ -390,6 +395,7 @@ export default function Dashboard() {
     await supabase.from('obras').delete().eq('id', idObra); buscarDados();
   };
 
+  // minha lógica de filtragem da tabela geral e do pdf
   let resumoFiltrado = resumoMensal;
 
   if (filtroNome) {
@@ -412,6 +418,7 @@ export default function Dashboard() {
       
       <style>
         {`
+            /* meu css blindado para a tela e impressão com anti guilhotina ativado */
             html, body { touch-action: pan-y; overscroll-behavior-y: none; -webkit-user-select: none; user-select: none; }
             input, select, textarea { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; }
 
@@ -476,7 +483,9 @@ export default function Dashboard() {
         `}
       </style>
 
+      {/* área de modais e minhas sobreposições na tela */}
       <div className="modais-extracao">
+        
         {modalEquipeAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-3xl p-6 md:p-8 shadow-2xl relative max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95">

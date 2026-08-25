@@ -142,7 +142,7 @@ export default function BaterPonto() {
       let folgasAcumuladas = 0;
       const obrasAcumuladas = {};
 
-      // === A MÁGICA DA NOVA REGRA DE ALMOÇO DO PEÃO ===
+      // a regra cirurgica do almoço do painel do peão
       Object.values(diasParaCalculo).forEach(dia => {
          if (dia.isEspecial) {
             folgasAcumuladas++;
@@ -151,8 +151,8 @@ export default function BaterPonto() {
             const dtSai = new Date(dia.saida);
             let mins = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
             
-            // só desconta se ele entrou antes do meio-dia E saiu a partir das 16:00
-            if (dtEnt.getHours() < 12 && dtSai.getHours() >= 16) {
+            // se entrou antes das 12 e saiu a partir das 13 desconta 1 hora
+            if (dtEnt.getHours() < 12 && dtSai.getHours() >= 13) {
               mins = Math.max(0, mins - 60);
             }
             
@@ -214,8 +214,8 @@ export default function BaterPonto() {
           const dtSai = new Date(dia.saida.raw);
           let mins = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
           
-          // mesma regra do almoço blindada na hora de assinar
-          if (dtEnt.getHours() < 12 && dtSai.getHours() >= 16) {
+          // mesma regra blindada no espelho que o peão assina
+          if (dtEnt.getHours() < 12 && dtSai.getHours() >= 13) {
             mins = Math.max(0, mins - 60);
             dia.descontouAlmoco = true;
           } else {
