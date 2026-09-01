@@ -82,7 +82,7 @@ export default function BaterPonto() {
         else {
            setJornadaAtual({ status: 'trabalhando', pontoEntradaGps: ultimaAcao.localizacao_gps, bloqueadoPorHoje: false, obraNomeAtual: ultimaAcao.obra_nome });
            if (obrasData && ultimaAcao.obra_nome) {
-             const obraMatch = obrasData.find(o => o.nome === ultimaAcao.obra_nome);
+             const obraMatch = obrasData.find(o => o.nome === ultimaAcao.obra_nome.replace(/ \| Int: \d+m/g, ''));
              if (obraMatch) setObraSelecionadaId(obraMatch.id);
            }
         }
@@ -94,8 +94,13 @@ export default function BaterPonto() {
     }
   };
 
+  // Trava para o funcionário sempre assinar o mês mais antigo primeiro
   const buscarFolhasPendentes = async (userId) => {
-    const { data } = await supabase.from('folhas_pagamento').select('*').eq('funcionario_id', userId).eq('status', 'pendente');
+    const { data } = await supabase.from('folhas_pagamento')
+      .select('*')
+      .eq('funcionario_id', userId)
+      .eq('status', 'pendente')
+      .order('mes_ano', { ascending: true }); 
     if (data) setFolhasPendentes(data);
   };
 
@@ -125,7 +130,12 @@ export default function BaterPonto() {
               agrupadoVisual[dataStrVisual].push({ id: ponto.id, isEspecial: ponto.obra_nome });
            }
         } else {
-           agrupadoVisual[dataStrVisual].push({ ...ponto, horaFormatada: horaStr, isEspecial: false });
+           agrupadoVisual[dataStrVisual].push({ 
+             ...ponto, 
+             horaFormatada: horaStr, 
+             isEspecial: false,
+             obra_nome: (ponto.obra_nome || 'Base').replace(/ \| Int: \d+m/g, '') // Apaga a etiqueta secreta
+           });
         }
 
         if (!diasParaCalculo[dataKeyMath]) diasParaCalculo[dataKeyMath] = { entrada: null, saida: null, isEspecial: false, obra: ponto.obra_nome || 'Base' };
@@ -142,7 +152,6 @@ export default function BaterPonto() {
       let folgasAcumuladas = 0;
       const obrasAcumuladas = {};
 
-      // a regra cirurgica do almoço do painel do peão
       Object.values(diasParaCalculo).forEach(dia => {
          if (dia.isEspecial) {
             folgasAcumuladas++;
@@ -151,14 +160,23 @@ export default function BaterPonto() {
             const dtSai = new Date(dia.saida);
             let mins = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
             
-            // se entrou antes das 12 e saiu a partir das 13 desconta 1 hora
-            if (dtEnt.getHours() < 12 && dtSai.getHours() >= 13) {
-              mins = Math.max(0, mins - 60);
+            const obraString = dia.obra || '';
+            let intervaloMinutos = null;
+            
+            if (obraString.includes('| Int: 90m')) intervaloMinutos = 90;
+            else if (obraString.includes('| Int: 0m')) intervaloMinutos = 0;
+            else if (obraString.includes('| Int: 60m')) intervaloMinutos = 60;
+            
+            if (intervaloMinutos !== null) {
+               mins = Math.max(0, mins - intervaloMinutos);
+            } else {
+               if (dtEnt.getHours() < 12 && dtSai.getHours() >= 13) {
+                  mins = Math.max(0, mins - 60);
+               }
             }
             
             totalMins += mins;
-
-            const nomeObra = dia.obra;
+            const nomeObra = obraString.replace(/ \| Int: \d+m/g, '');
             if (!obrasAcumuladas[nomeObra]) obrasAcumuladas[nomeObra] = 0;
             obrasAcumuladas[nomeObra] += mins;
          }
@@ -196,7 +214,7 @@ export default function BaterPonto() {
         const dataLocal = dataObj.toLocaleDateString('pt-BR');
         const horaLocal = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-        if (!dias[dataLocal]) dias[dataLocal] = { data: dataLocal, entrada: null, saida: null, totalDia: 0, obra: ponto.obra_nome || 'Base', isEspecial: false };
+        if (!dias[dataLocal]) dias[dataLocal] = { data: dataLocal, entrada: null, saida: null, totalDia: 0, obra: ponto.obra_nome || 'Base', isEspecial: false, intervaloLabel: '-' };
         
         if (['FOLGA', 'FÉRIAS', 'VIAGEM'].includes(ponto.obra_nome)) {
           dias[dataLocal].isEspecial = ponto.obra_nome;
@@ -214,16 +232,28 @@ export default function BaterPonto() {
           const dtSai = new Date(dia.saida.raw);
           let mins = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
           
-          // mesma regra blindada no espelho que o peão assina
-          if (dtEnt.getHours() < 12 && dtSai.getHours() >= 13) {
-            mins = Math.max(0, mins - 60);
-            dia.descontouAlmoco = true;
+          const obraString = dia.obra || '';
+          let intervaloMinutos = null;
+          
+          if (obraString.includes('| Int: 90m')) intervaloMinutos = 90;
+          else if (obraString.includes('| Int: 0m')) intervaloMinutos = 0;
+          else if (obraString.includes('| Int: 60m')) intervaloMinutos = 60;
+          
+          if (intervaloMinutos !== null) {
+             mins = Math.max(0, mins - intervaloMinutos);
+             dia.intervaloLabel = intervaloMinutos === 90 ? '12:00 às 13:30' : (intervaloMinutos === 60 ? '12:00 às 13:00' : 'Sem pausa');
           } else {
-            dia.descontouAlmoco = false;
+             if (dtEnt.getHours() < 12 && dtSai.getHours() >= 13) {
+                mins = Math.max(0, mins - 60);
+                dia.intervaloLabel = '12:00 às 13:00';
+             } else {
+                dia.intervaloLabel = 'Sem pausa';
+             }
           }
           
           dia.totalDia = mins;
           totalMinutosMes += mins;
+          dia.obra = obraString.replace(/ \| Int: \d+m/g, ''); 
         }
       });
 

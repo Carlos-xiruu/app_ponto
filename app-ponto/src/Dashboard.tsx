@@ -50,7 +50,7 @@ export default function Dashboard() {
   const [filtroData, setFiltroData] = useState('');
   const [editandoPonto, setEditandoPonto] = useState(false);
 
-  // meu estado para controlar o formulário turbinado de lançamento e edição
+  // formulário turbinado de lançamento e edição
   const [formManual, setFormManual] = useState({ 
     funcionario_id: '', 
     tipo_lancamento: 'normal', 
@@ -58,7 +58,8 @@ export default function Dashboard() {
     data_fim: '', 
     hora_entrada: '07:00', 
     hora_saida: '17:00', 
-    obra_nome: 'Lançamento Manual / Base' 
+    obra_nome: 'Lançamento Manual / Base',
+    intervalo: 'auto'
   });
   
   const [formObra, setFormObra] = useState({ nome: '', gps: '', buscaEndereco: '' });
@@ -129,7 +130,8 @@ export default function Dashboard() {
           entrada: null, 
           saida: null, 
           minutosTrabalhadosDia: 0, 
-          descontouAlmoco: false, 
+          intervaloLabel: '-', 
+          intervaloRaw: 'auto',
           isEspecial: false 
         };
       }
@@ -150,22 +152,42 @@ export default function Dashboard() {
 
       if (dia.isEspecial) {
         dia.minutosTrabalhadosDia = 0;
+        dia.intervaloLabel = '-';
+        dia.intervaloRaw = 'auto';
       } 
       else if (dia.entrada && dia.saida) {
         const dtEnt = new Date(dia.entrada.rawIso);
         const dtSai = new Date(dia.saida.rawIso);
         let minutos = Math.max(0, Math.floor((dtSai.getTime() - dtEnt.getTime()) / 60000));
         
-        // se entrou antes das 12 e saiu a partir das 13 desconta 1 hora
-        if (dtEnt.getHours() < 12 && dtSai.getHours() >= 13) {
-          minutos = Math.max(0, minutos - 60);
-          dia.descontouAlmoco = true;
+        // decifra o carimbo invisível
+        const obraStr = dia.entrada.obra || '';
+        let intervaloMinutos = null;
+        let rawIntervaloLabel = 'auto';
+        
+        if (obraStr.includes('| Int: 90m')) { intervaloMinutos = 90; rawIntervaloLabel = '90'; }
+        else if (obraStr.includes('| Int: 0m')) { intervaloMinutos = 0; rawIntervaloLabel = '0'; }
+        else if (obraStr.includes('| Int: 60m')) { intervaloMinutos = 60; rawIntervaloLabel = '60'; }
+        
+        if (intervaloMinutos !== null) {
+          minutos = Math.max(0, minutos - intervaloMinutos);
+          dia.intervaloLabel = intervaloMinutos === 90 ? '12:00 às 13:30' : (intervaloMinutos === 60 ? '12:00 às 13:00' : 'Sem pausa');
         } else {
-          dia.descontouAlmoco = false;
+          if (dtEnt.getHours() < 12 && dtSai.getHours() >= 13) {
+            minutos = Math.max(0, minutos - 60);
+            dia.intervaloLabel = '12:00 às 13:00';
+          } else {
+            dia.intervaloLabel = 'Sem pausa';
+          }
         }
 
+        dia.intervaloRaw = rawIntervaloLabel; // gravo na memoria para o form de edição
         dia.minutosTrabalhadosDia = minutos;
         totaisMinutosMes[dia.nome] += minutos;
+        
+        // limpa o carimbo da tela
+        dia.entrada.obra = obraStr.replace(/ \| Int: \d+m/g, '');
+        if (dia.saida.obra) dia.saida.obra = dia.saida.obra.replace(/ \| Int: \d+m/g, '');
       }
     });
 
@@ -196,7 +218,6 @@ export default function Dashboard() {
     setCarregando(false);
   };
 
-  // inicio do meu motor de gestão de equipe para promover e demitir
   const buscarEquipeCompleta = async () => {
     const { data } = await supabase.from('perfis').select('*').order('nome');
     if (data) setEquipeCompleta(data);
@@ -205,41 +226,25 @@ export default function Dashboard() {
   const alternarPermissaoGestor = async (membro) => {
     const novoStatus = !membro.is_admin;
     const acao = novoStatus ? 'Promover a Gestor' : 'Remover o acesso de Gestor de';
-    
     if (!window.confirm(`Você deseja ${acao} ${membro.nome}?`)) return;
-
     setCarregando(true);
     const { error } = await supabase.from('perfis').update({ is_admin: novoStatus }).eq('id', membro.id);
-
-    if (error) {
-      alert("Erro ao alterar permissão: " + error.message);
-    } else {
-      alert(`Feito! ${novoStatus ? 'Acesso concedido.' : 'Acesso removido.'}\n\nAVISO: Peça para o colaborador FECHAR O APLICATIVO E ABRIR DE NOVO no celular dele para o sistema atualizar a tela.`);
-      buscarEquipeCompleta();
-      buscarDados(); 
-    }
+    if (error) alert("Erro ao alterar permissão: " + error.message);
+    else { alert(`Feito! Acesso atualizado.\nPeça para o colaborador fechar o app e abrir de novo.`); buscarEquipeCompleta(); buscarDados(); }
     setCarregando(false);
   };
 
   const excluirColaborador = async (membro) => {
-    if (!window.confirm(`⚠️ EXCLUSÃO DE CONTA ⚠️\n\nTem certeza que deseja EXCLUIR DEFINITIVAMENTE o colaborador ${membro.nome}?\n\nIsso apagará o acesso dele, todas as folhas de pagamento e todo o histórico de pontos dele do sistema. Esta ação não tem volta.`)) return;
-
+    if (!window.confirm(`⚠️ EXCLUSÃO DE CONTA ⚠️\n\nTem certeza que deseja EXCLUIR DEFINITIVAMENTE o colaborador ${membro.nome}? Esta ação não tem volta.`)) return;
     setCarregando(true);
     await supabase.from('folhas_pagamento').delete().eq('funcionario_id', membro.id);
     await supabase.from('registros_ponto').delete().eq('funcionario_id', membro.id);
     const { error } = await supabase.from('perfis').delete().eq('id', membro.id);
-
-    if (error) {
-      alert("Erro ao excluir colaborador: " + error.message);
-    } else {
-      alert(`${membro.nome} foi removido do sistema com sucesso!`);
-      buscarEquipeCompleta();
-      buscarDados();
-    }
+    if (error) alert("Erro ao excluir colaborador: " + error.message);
+    else { alert(`${membro.nome} removido do sistema.`); buscarEquipeCompleta(); buscarDados(); }
     setCarregando(false);
   };
 
-  // minhas funções de disparo em lote e individual para fechar a folha
   const fecharFolhaDoMes = async () => {
     if(!window.confirm(`ATENÇÃO GESTOR:\nVocê está prestes a FECHAR a folha de ${mesFiltro} para TODOS os colaboradores.\nIsso enviará o espelho de ponto deste mês para todos assinarem digitalmente pelo aplicativo.\n\nTem certeza que os registros estão corretos?`)) return;
     setCarregando(true);
@@ -262,6 +267,15 @@ export default function Dashboard() {
     buscarDados();
   };
 
+  // === BOTÃO DE SALVAÇÃO: ESTORNAR FECHAMENTO ===
+  const estornarFechamentoDoMes = async () => {
+    if(!window.confirm(`⚠️ CUIDADO: Deseja CANCELAR o fechamento da folha de ${mesFiltro}?\n\nIsso apagará todas as assinaturas digitais já feitas neste mês e reabrirá o espelho para edição. Use apenas em caso de acidente.`)) return;
+    setCarregando(true);
+    const { error } = await supabase.from('folhas_pagamento').delete().eq('mes_ano', mesFiltro);
+    if(error) alert('Erro ao reabrir: ' + error.message); else alert('Folha reaberta com sucesso! As assinaturas deste mês foram canceladas.');
+    buscarDados();
+  };
+
   const enviarRelatorioGeralWhats = () => {
     const [ano, mes] = mesFiltro.split('-'); let texto = `*📊 RELATÓRIO MENSAL DE HORAS - ${mes}/${ano}*\n\n`;
     resumoMensal.forEach(r => { texto += `👤 *${r.nome}* (${r.cargo})\n⏱️ Total: *${r.horasFormatadas}*\n\n`; });
@@ -280,7 +294,6 @@ export default function Dashboard() {
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(texto)}`, '_blank');
   };
 
-  // inicio da minha função que preenche o modal para edição a jato
   const abrirEdicaoPonto = (linha) => {
     const [d, m, y] = linha.data.split('/');
     const dataIso = `${y}-${m}-${d}`;
@@ -297,7 +310,8 @@ export default function Dashboard() {
       data_fim: dataIso, 
       hora_entrada: linha.entrada?.hora || '07:00',
       hora_saida: linha.saida?.hora || '17:00',
-      obra_nome: linha.isEspecial ? linha.isEspecial : (linha.entrada?.obra || linha.saida?.obra || 'Lançamento Manual / Base')
+      obra_nome: linha.isEspecial ? linha.isEspecial : (linha.entrada?.obra || linha.saida?.obra || 'Lançamento Manual / Base'),
+      intervalo: linha.intervaloRaw || 'auto'
     });
     
     setEditandoPonto(true);
@@ -307,28 +321,32 @@ export default function Dashboard() {
   const fecharModalManual = () => {
     setModalAberto(false);
     setEditandoPonto(false);
-    setFormManual({ funcionario_id: '', tipo_lancamento: 'normal', data_inicio: '', data_fim: '', hora_entrada: '07:00', hora_saida: '17:00', obra_nome: 'Lançamento Manual / Base' });
+    setFormManual({ funcionario_id: '', tipo_lancamento: 'normal', data_inicio: '', data_fim: '', hora_entrada: '07:00', hora_saida: '17:00', obra_nome: 'Lançamento Manual / Base', intervalo: 'auto' });
   }
 
-  // meu lançamento manual e edição usando o motor unificado
+  // lançador de pontos blindado contra o fuso horario
   const lancarPontoManual = async (e) => {
     e.preventDefault(); 
     setCarregando(true);
 
-    const dataInicioIso = new Date(`${formManual.data_inicio}T00:00:00`).toISOString();
-    const dataFimIso = new Date(`${formManual.data_fim || formManual.data_inicio}T23:59:59`).toISOString();
+    const [anoIni, mesIni, diaIni] = formManual.data_inicio.split('-');
+    const dataInicioUtc = new Date(anoIni, mesIni - 1, diaIni, 0, 0, 0).toISOString();
+    
+    const dataFinalRef = formManual.data_fim || formManual.data_inicio;
+    const [anoFim, mesFim, diaFim] = dataFinalRef.split('-');
+    const dataFimUtc = new Date(anoFim, mesFim - 1, diaFim, 23, 59, 59).toISOString();
 
     const { data: registrosExistentes } = await supabase
       .from('registros_ponto')
       .select('id')
       .eq('funcionario_id', formManual.funcionario_id)
-      .gte('data_hora', dataInicioIso)
-      .lte('data_hora', dataFimIso);
+      .gte('data_hora', dataInicioUtc)
+      .lte('data_hora', dataFimUtc);
 
     if (registrosExistentes && registrosExistentes.length > 0) {
       let mensagem = `⚠️ ATENÇÃO!\n\nJá existem registros para este colaborador dentro do período informado.\n\nDeseja SUBSTITUIR tudo o que estiver lançado nestes dias pelos novos dados?`;
       if (editandoPonto) {
-        mensagem = `CONFIRMAÇÃO DE EDIÇÃO\n\nVocê está alterando os horários deste dia.\nDeseja salvar as novas informações e recalcular a jornada automaticamente?`;
+        mensagem = `CONFIRMAÇÃO DE EDIÇÃO\n\nVocê está alterando os horários ou regras deste dia.\nDeseja salvar as novas informações e recalcular a jornada automaticamente?`;
       }
 
       const confirma = window.confirm(mensagem);
@@ -340,37 +358,50 @@ export default function Dashboard() {
     }
 
     const batidasMassa = [];
-    const parseDate = (d) => { const [y, m, day] = d.split('-'); return new Date(y, m - 1, day); };
-    
-    let currentDate = parseDate(formManual.data_inicio);
-    const endDate = parseDate(formManual.data_fim || formManual.data_inicio);
+    let currentDate = new Date(anoIni, mesIni - 1, diaIni);
+    const endDate = new Date(anoFim, mesFim - 1, diaFim);
+
+    let sufixoObra = '';
+    if (formManual.intervalo !== 'auto') {
+       sufixoObra = ` | Int: ${formManual.intervalo}m`;
+    }
 
     while (currentDate <= endDate) {
-      const dateStr = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
+      const y = currentDate.getFullYear();
+      const m = currentDate.getMonth();
+      const d = currentDate.getDate();
       
       if (formManual.tipo_lancamento === 'normal') {
-        batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'entrada', data_hora: new Date(`${dateStr}T${formManual.hora_entrada}:00`).toISOString(), obra_nome: formManual.obra_nome });
-        batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'saida', data_hora: new Date(`${dateStr}T${formManual.hora_saida}:00`).toISOString(), obra_nome: formManual.obra_nome });
+        const [hE, mE] = formManual.hora_entrada.split(':');
+        const [hS, mS] = formManual.hora_saida.split(':');
+        
+        const dataEntradaUtc = new Date(y, m, d, parseInt(hE), parseInt(mE), 0).toISOString();
+        const dataSaidaUtc = new Date(y, m, d, parseInt(hS), parseInt(mS), 0).toISOString();
+        const obraFinal = formManual.obra_nome + sufixoObra;
+
+        batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'entrada', data_hora: dataEntradaUtc, obra_nome: obraFinal });
+        batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'saida', data_hora: dataSaidaUtc, obra_nome: obraFinal });
       } else {
-        const label = formManual.tipo_lancamento === 'folga' ? 'FOLGA' : formManual.tipo_lancamento === 'ferias' ? 'FÉRIAS' : 'VIAGEM';
-        batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'entrada', data_hora: new Date(`${dateStr}T00:00:00`).toISOString(), obra_nome: label });
-        batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'saida', data_hora: new Date(`${dateStr}T00:00:00`).toISOString(), obra_nome: label });
+        const labelEspecial = formManual.tipo_lancamento === 'folga' ? 'FOLGA' : formManual.tipo_lancamento === 'ferias' ? 'FÉRIAS' : 'VIAGEM';
+        const horaGenerica = new Date(y, m, d, 0, 0, 0).toISOString();
+        
+        batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'entrada', data_hora: horaGenerica, obra_nome: labelEspecial });
+        batidasMassa.push({ funcionario_id: formManual.funcionario_id, tipo_registro: 'saida', data_hora: horaGenerica, obra_nome: labelEspecial });
       }
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
     const { error } = await supabase.from('registros_ponto').insert(batidasMassa);
-
     if (!error) { 
-      fecharModalManual();
-      buscarDados(); 
+      fecharModalManual(); 
+      // o delay salvador para não bugar a tabela
+      setTimeout(() => { buscarDados(); }, 800); 
     } else { 
-      alert("Erro ao lançar pontos no banco de dados."); 
+      alert("Erro ao lançar pontos."); 
+      setCarregando(false);
     }
-    setCarregando(false);
   };
 
-  // minha integração com a api da photon
   const buscarCoordenadasPorEndereco = async () => {
     if (!formObra.buscaEndereco) return;
     setBuscandoEndereco(true);
@@ -395,7 +426,6 @@ export default function Dashboard() {
     await supabase.from('obras').delete().eq('id', idObra); buscarDados();
   };
 
-  // minha lógica de filtragem da tabela geral e do pdf
   let resumoFiltrado = resumoMensal;
 
   if (filtroNome) {
@@ -418,59 +448,28 @@ export default function Dashboard() {
       
       <style>
         {`
-            /* meu css blindado para a tela e impressão com anti guilhotina ativado */
             html, body { touch-action: pan-y; overscroll-behavior-y: none; -webkit-user-select: none; user-select: none; }
             input, select, textarea { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; }
 
             @media print {
               @page { size: ${extratoSelecionado ? 'A4 portrait' : 'A4 portrait'}; margin: 10mm; }
-              
-              html, body, #root, main, .min-h-screen { 
-                background: white !important; 
-                color: black !important; 
-                display: block !important; 
-                position: relative !important;
-                width: 100% !important; 
-                height: auto !important; 
-                min-height: auto !important; 
-                overflow: visible !important; 
-                margin: 0 !important; 
-                padding: 0 !important; 
-                box-sizing: border-box !important; 
-              }
-              
+              html, body, #root, main, .min-h-screen { background: white !important; color: black !important; display: block !important; position: relative !important; width: 100% !important; height: auto !important; min-height: auto !important; overflow: visible !important; margin: 0 !important; padding: 0 !important; box-sizing: border-box !important; }
               * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-shadow: none !important; color: black !important; box-sizing: border-box !important; }
               header, .tela-interativa, .modais-extracao { display: none !important; }
-              
-              .area-impressao { 
-                display: block !important; 
-                position: relative !important; 
-                width: 100% !important; 
-                height: auto !important; 
-                overflow: visible !important; 
-                background: white !important; 
-                padding: 10mm !important; 
-              }
-              
+              .area-impressao { display: block !important; position: relative !important; width: 100% !important; height: auto !important; overflow: visible !important; background: white !important; padding: 10mm !important; }
               .pdf-table { width: 100% !important; border-collapse: collapse !important; margin-top: 15px !important; page-break-inside: auto !important; }
               .pdf-table th { border: 1px solid #cbd5e1 !important; padding: 8px 10px !important; font-size: 10px !important; background-color: #f1f5f9 !important; text-transform: uppercase !important; font-weight: bold !important; text-align: left !important; }
-              
               tr { page-break-inside: avoid !important; break-inside: avoid !important; -webkit-column-break-inside: avoid !important; page-break-after: auto !important; }
               .pdf-table td { border: 1px solid #cbd5e1 !important; padding: 8px 10px !important; font-size: 11px !important; vertical-align: middle !important; page-break-inside: avoid !important; break-inside: avoid !important; }
-              
-              thead { display: table-header-group !important; }
-              tfoot { display: table-footer-group !important; }
-              
+              thead { display: table-header-group !important; } tfoot { display: table-footer-group !important; }
               .pdf-title { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 18px !important; margin: 0 0 5px 0 !important; text-transform: uppercase !important; border-bottom: 2px solid #cbd5e1 !important; padding-bottom: 8px !important; }
               .pdf-subtitle { font-size: 11px !important; color: #475569 !important; margin: 6px 0 15px 0 !important; }
               .pdf-section { font-family: 'Montserrat', sans-serif !important; font-weight: bold !important; font-size: 12px !important; border-bottom: 1px solid #cbd5e1 !important; padding-bottom: 4px !important; margin-top: 20px !important; margin-bottom: 8px !important; text-transform: uppercase !important; page-break-inside: avoid !important; break-inside: avoid !important; }
               .pdf-box { border: 1px solid #cbd5e1 !important; padding: 12px !important; margin-top: 15px !important; display: flex !important; justify-content: space-between !important; background-color: #f8fafc !important; page-break-inside: avoid !important; break-inside: avoid !important; }
-
               .certificado-container { border: 4px double #1e293b !important; padding: 40px !important; border-radius: 10px !important; page-break-inside: avoid !important; break-inside: avoid !important; }
               .certificado-header { text-align: center !important; margin-bottom: 30px !important; }
               .certificado-body { line-height: 1.8 !important; font-size: 12px !important; margin-bottom: 30px !important; text-align: justify !important;}
               .certificado-hash { font-family: monospace !important; background: #f1f5f9 !important; padding: 15px !important; border: 1px solid #cbd5e1 !important; word-wrap: break-word !important; font-size: 10px !important; }
-
               .extrato-compacto { page-break-after: always; break-after: page; } 
               .extrato-compacto .pdf-title { font-size: 16px !important; margin-bottom: 2px !important; padding-bottom: 4px !important; }
               .extrato-compacto .pdf-subtitle { margin-bottom: 8px !important; font-size: 10px !important; }
@@ -483,9 +482,7 @@ export default function Dashboard() {
         `}
       </style>
 
-      {/* área de modais e minhas sobreposições na tela */}
       <div className="modais-extracao">
-        
         {modalEquipeAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-3xl w-full max-w-3xl p-6 md:p-8 shadow-2xl relative max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95">
@@ -583,7 +580,7 @@ export default function Dashboard() {
                             <>
                               <td className="p-4 text-[11px] text-blue-400 font-medium"><span className="flex items-center gap-1.5"><Building2 size={12}/> {l.entrada?.obra || l.saida?.obra || '-'}</span></td>
                               <td className="p-4 text-emerald-400 font-bold">{l.entrada ? l.entrada.hora : '-'}</td>
-                              <td className="p-4 text-slate-400 text-xs whitespace-nowrap">{l.saida ? (l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
+                              <td className="p-4 text-slate-400 text-xs whitespace-nowrap">{l.saida ? (l.intervaloLabel || 'Sem pausa') : '-'}</td>
                               <td className="p-4 text-slate-300 font-bold">{l.saida ? l.saida.hora : '-'}</td>
                               <td className="p-4 font-mono font-bold text-right text-blue-400">
                                 {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
@@ -648,6 +645,7 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* formulário com seletor de almoço */}
         {modalAberto && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden">
             <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
@@ -693,6 +691,16 @@ export default function Dashboard() {
                       <select required value={formManual.obra_nome} onChange={e => setFormManual({...formManual, obra_nome: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-blue-500 outline-none">
                         <option value="Lançamento Manual / Base">Manual / Base</option>
                         {obrasList.map(o => <option key={o.id} value={o.nome}>{o.nome}</option>)}
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="text-xs text-slate-400 mb-1 block">Desconto de Intervalo (Almoço)</label>
+                      <select value={formManual.intervalo} onChange={e => setFormManual({...formManual, intervalo: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-amber-400 focus:border-blue-500 outline-none font-semibold">
+                        <option value="auto">Automático (Regra CLT: 12h às 13h)</option>
+                        <option value="90">Especial (1h 30m de pausa)</option>
+                        <option value="0">Sem Desconto (Trabalho Direto)</option>
+                        <option value="60">Forçar 1 Hora de Pausa</option>
                       </select>
                     </div>
 
@@ -768,7 +776,12 @@ export default function Dashboard() {
               <button onClick={() => setModalEquipeAberto(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 font-bold text-sm rounded-xl transition-all shadow-sm"><Users size={18} /> Equipe</button>
               
               <button onClick={fecharFolhaDoMes} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-emerald-900/30"><FileSignature size={18} /> Fechar Mês</button>
-              <button onClick={() => { setFormManual({ funcionario_id: '', tipo_lancamento: 'normal', data_inicio: '', data_fim: '', hora_entrada: '07:00', hora_saida: '17:00', obra_nome: 'Lançamento Manual / Base' }); setEditandoPonto(false); setModalAberto(true); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700/60 font-semibold text-sm rounded-xl transition-all shadow-sm"><Plus size={18} /> Lançamento</button>
+              
+              {folhasPagamento.length > 0 && (
+                <button onClick={estornarFechamentoDoMes} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/30 font-bold text-sm rounded-xl transition-all shadow-sm"><Trash2 size={18} /> Reabrir Mês</button>
+              )}
+
+              <button onClick={() => { setFormManual({ funcionario_id: '', tipo_lancamento: 'normal', data_inicio: '', data_fim: '', hora_entrada: '07:00', hora_saida: '17:00', obra_nome: 'Lançamento Manual / Base', intervalo: 'auto' }); setEditandoPonto(false); setModalAberto(true); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700/60 font-semibold text-sm rounded-xl transition-all shadow-sm"><Plus size={18} /> Lançamento</button>
               <button onClick={() => setModalObraAberto(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 font-semibold text-sm rounded-xl transition-all shadow-sm"><Building2 size={18} /> Obras</button>
               <button onClick={() => { setExtratoSelecionado(null); setTimeout(() => window.print(), 100); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 font-semibold text-sm rounded-xl transition-all shadow-sm"><FileText size={18} /> PDF Geral</button>
             </div>
@@ -918,7 +931,7 @@ export default function Dashboard() {
                             ) : (
                               <>
                                 <td className="p-5">{linha.entrada ? ( <div className="flex items-start gap-3">{linha.entrada.foto && <img src={linha.entrada.foto} loading="lazy" alt="Selfie" onClick={() => setFotoExpandida(linha.entrada.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-emerald-400 text-base">{linha.entrada.hora}</span>{linha.entrada.gps && <BadgeLocalizacao gps={linha.entrada.gps} />}</div></div> ) : <span className="text-slate-700">-</span>}</td>
-                                <td className="p-5 text-slate-400 text-xs whitespace-nowrap">{linha.saida ? (linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
+                                <td className="p-5 text-slate-400 text-xs whitespace-nowrap">{linha.saida ? (linha.intervaloLabel || 'Sem pausa') : '-'}</td>
                                 <td className="p-5">{linha.saida ? ( <div className="flex items-start gap-3">{linha.saida.foto && <img src={linha.saida.foto} loading="lazy" alt="Selfie" onClick={() => setFotoExpandida(linha.saida.foto)} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 cursor-pointer shrink-0" />}<div className="flex flex-col gap-1.5"><span className="font-semibold text-slate-300 text-base">{linha.saida.hora}</span>{linha.saida.gps && <BadgeLocalizacao gps={linha.saida.gps} />}</div></div> ) : <span className="text-xs bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full font-medium">Em andamento</span>}</td>
                                 <td className="p-5 text-right">
                                   {linha.minutosTrabalhadosDia > 0 ? ( 
@@ -984,7 +997,7 @@ export default function Dashboard() {
                       <>
                         <td>{l.entrada?.obra || l.saida?.obra || '-'}</td>
                         <td>{l.entrada ? l.entrada.hora : '-'}</td>
-                        <td style={{ whiteSpace: 'nowrap' }}>{l.saida ? (l.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{l.saida ? (l.intervaloLabel || 'Sem pausa') : '-'}</td>
                         <td>{l.saida ? l.saida.hora : '-'}</td>
                         <td style={{ textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace' }}>
                           {l.minutosTrabalhadosDia > 0 ? `${Math.floor(l.minutosTrabalhadosDia / 60)}h ${(l.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
@@ -1069,7 +1082,7 @@ export default function Dashboard() {
                         ) : (
                           <>
                             <td>{linha.entrada ? linha.entrada.hora : '-'}</td>
-                            <td style={{ whiteSpace: 'nowrap' }}>{linha.saida ? (linha.descontouAlmoco ? '12:00 às 13:00' : 'Sem pausa') : '-'}</td>
+                            <td style={{ whiteSpace: 'nowrap' }}>{linha.saida ? (linha.intervaloLabel || 'Sem pausa') : '-'}</td>
                             <td>{linha.saida ? linha.saida.hora : (linha.minutosTrabalhadosDia === 0 ? 'Em andamento' : '-')}</td>
                             <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold' }}>
                               {linha.minutosTrabalhadosDia > 0 ? `${Math.floor(linha.minutosTrabalhadosDia / 60)}h ${(linha.minutosTrabalhadosDia % 60).toString().padStart(2, '0')}m` : '-'}
