@@ -41,6 +41,7 @@ export default function Dashboard() {
   // meus estados da gestão de equipe
   const [modalEquipeAberto, setModalEquipeAberto] = useState(false);
   const [equipeCompleta, setEquipeCompleta] = useState([]);
+  const [excluindoColaboradorId, setExcluindoColaboradorId] = useState(null);
   
   const [buscandoEndereco, setBuscandoEndereco] = useState(false);
   const [resultadosBusca, setResultadosBusca] = useState([]); 
@@ -93,7 +94,7 @@ export default function Dashboard() {
       supabase.from('obras').select('*').order('nome'),
       supabase.from('folhas_pagamento').select('*').eq('mes_ano', mesFiltro),
       supabase.from('registros_ponto')
-        .select('id, tipo_registro, data_hora, foto_url, localizacao_gps, funcionario_id, obra_nome, perfis ( nome, funcao, cpf )')
+        .select('id, tipo_registro, data_hora, foto_url, localizacao_gps, funcionario_id, colaborador_excluido_id, obra_nome, perfis ( nome, funcao, cpf ), perfis_excluidos ( nome, funcao, cpf )')
         .gte('data_hora', dataInicio)
         .lte('data_hora', dataFim)
         .order('data_hora', { ascending: true })
@@ -113,16 +114,17 @@ export default function Dashboard() {
       const dataObj = new Date(ponto.data_hora);
       const dataLocal = dataObj.toLocaleDateString('pt-BR');
       const horaLocal = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      const nomeFuncionario = ponto.perfis?.nome || 'Desconhecido';
-      const cpfFuncionario = ponto.perfis?.cpf || ''; 
-      const cargoFuncionario = ponto.perfis?.funcao || 'Não definida';
+      const perfilRelacionado = ponto.perfis || ponto.perfis_excluidos;
+      const nomeFuncionario = perfilRelacionado?.nome || 'Desconhecido';
+      const cpfFuncionario = perfilRelacionado?.cpf || '';
+      const cargoFuncionario = perfilRelacionado?.funcao || 'Não definida';
       const chave = `${nomeFuncionario}-${dataLocal}`;
 
       if (!maiorDataEncontrada || dataObj > maiorDataEncontrada) { maiorDataEncontrada = dataObj; }
 
       if (!agrupamento[chave]) {
         agrupamento[chave] = { 
-          funcionario_id: ponto.funcionario_id, 
+          funcionario_id: ponto.funcionario_id || ponto.colaborador_excluido_id,
           nome: nomeFuncionario, 
           cpf: cpfFuncionario,
           cargo: cargoFuncionario, 
@@ -228,21 +230,36 @@ export default function Dashboard() {
     const acao = novoStatus ? 'Promover a Gestor' : 'Remover o acesso de Gestor de';
     if (!window.confirm(`Você deseja ${acao} ${membro.nome}?`)) return;
     setCarregando(true);
-    const { error } = await supabase.from('perfis').update({ is_admin: novoStatus }).eq('id', membro.id);
+    const { error } = await supabase.rpc('alterar_permissao_gestor', { p_colaborador_id: membro.id, p_is_admin: novoStatus });
     if (error) alert("Erro ao alterar permissão: " + error.message);
     else { alert(`Feito! Acesso atualizado.\nPeça para o colaborador fechar o app e abrir de novo.`); buscarEquipeCompleta(); buscarDados(); }
     setCarregando(false);
   };
 
   const excluirColaborador = async (membro) => {
-    if (!window.confirm(`⚠️ EXCLUSÃO DE CONTA ⚠️\n\nTem certeza que deseja EXCLUIR DEFINITIVAMENTE o colaborador ${membro.nome}? Esta ação não tem volta.`)) return;
-    setCarregando(true);
-    await supabase.from('folhas_pagamento').delete().eq('funcionario_id', membro.id);
-    await supabase.from('registros_ponto').delete().eq('funcionario_id', membro.id);
-    const { error } = await supabase.from('perfis').delete().eq('id', membro.id);
-    if (error) alert("Erro ao excluir colaborador: " + error.message);
-    else { alert(`${membro.nome} removido do sistema.`); buscarEquipeCompleta(); buscarDados(); }
-    setCarregando(false);
+    if (excluindoColaboradorId) return;
+    if (!window.confirm(`⚠️ EXCLUSÃO DE CONTA ⚠️\n\nTem certeza que deseja EXCLUIR DEFINITIVAMENTE o colaborador ${membro.nome}? O acesso será removido. Os registros de ponto e folhas de pagamento serão preservados no histórico.`)) return;
+
+    setExcluindoColaboradorId(membro.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('excluir-colaborador', {
+        body: { targetUserId: membro.id }
+      });
+
+      if (error) throw error;
+      if (!data || !['deleted', 'already_deleted'].includes(data.status)) {
+        throw new Error('O servidor não confirmou a exclusão do colaborador.');
+      }
+
+      setEquipeCompleta(equipe => equipe.filter(item => item.id !== membro.id));
+      setFuncionarios(equipe => equipe.filter(item => item.id !== membro.id));
+      await Promise.all([buscarEquipeCompleta(), buscarDados()]);
+      alert(`${membro.nome} foi excluído do cadastro. O histórico foi preservado.`);
+    } catch (error) {
+      alert('Não foi possível excluir o colaborador. Nenhuma confirmação de sucesso foi recebida. ' + (error?.message || 'Tente novamente.'));
+    } finally {
+      setExcluindoColaboradorId(null);
+    }
   };
 
   const fecharFolhaDoMes = async () => {
@@ -271,9 +288,16 @@ export default function Dashboard() {
   const estornarFechamentoDoMes = async () => {
     if(!window.confirm(`⚠️ CUIDADO: Deseja CANCELAR o fechamento da folha de ${mesFiltro}?\n\nIsso apagará todas as assinaturas digitais já feitas neste mês e reabrirá o espelho para edição. Use apenas em caso de acidente.`)) return;
     setCarregando(true);
-    const { error } = await supabase.from('folhas_pagamento').delete().eq('mes_ano', mesFiltro);
-    if(error) alert('Erro ao reabrir: ' + error.message); else alert('Folha reaberta com sucesso! As assinaturas deste mês foram canceladas.');
-    buscarDados();
+    try {
+      const { error } = await supabase.rpc('reabrir_folha_mes', { p_mes_ano: mesFiltro });
+      if (error) alert('Erro ao reabrir: ' + error.message);
+      else {
+        await buscarDados();
+        alert('Folha reaberta com sucesso! As assinaturas deste mês foram canceladas.');
+      }
+    } finally {
+      setCarregando(false);
+    }
   };
 
   const enviarRelatorioGeralWhats = () => {
@@ -518,8 +542,8 @@ export default function Dashboard() {
                                 <Key size={18} />
                              </button>
 
-                             <button onClick={() => excluirColaborador(membro)} title="Excluir Conta e Histórico" className="p-2.5 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-lg transition-colors flex items-center gap-2">
-                                <Trash2 size={18} />
+                             <button onClick={() => excluirColaborador(membro)} disabled={Boolean(excluindoColaboradorId)} title="Excluir conta e preservar histórico" className="p-2.5 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-lg transition-colors flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
+                                {excluindoColaboradorId === membro.id ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
                              </button>
                           </div>
                        </div>
