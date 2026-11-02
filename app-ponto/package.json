@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test:edge": "npx --yes deno test supabase/functions/excluir-colaborador/handler.test.ts",
+    "test:edge": "npx --yes deno test supabase/functions/excluir-colaborador",
     "preview": "vite preview"
   },
   "dependencies": {

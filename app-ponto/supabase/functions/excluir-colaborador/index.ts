@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
+import { corsHeadersFor } from './cors.ts';
 import { createDeleteEmployeeHandler } from './handler.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -38,11 +39,7 @@ Deno.serve(async (request) => {
   const origin = request.headers.get('Origin');
   if (origin && origin !== appOrigin) return new Response(null, { status: 403 });
 
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': appOrigin,
-    'Access-Control-Allow-Headers': 'authorization, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS'
-  };
+  const corsHeaders = corsHeadersFor(appOrigin);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
   if (request.method !== 'POST') return new Response(null, { status: 405, headers: corsHeaders });
 
